@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  mcp-client:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    env_file:
+      - .env
+    volumes:
+      - ./nginx:/etc/nginx/conf.d
+    restart: unless-stopped
+
+  # Optional: MCP Registry proxy (if you want to run a local registry server)
+  # mcp-registry:
+  #   image: nginx:stable-alpine
+  #   ports:
+  #     - "8080:80"
+  #   volumes:
+  #     - ./nginx/registry-proxy.conf:/etc/nginx/conf.d/default.conf
+  #   restart: unless-stopped
