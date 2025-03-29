@@ -2,7 +2,7 @@ import axios from "axios";
 import { ServerConfig, TransportType } from "@/lib/mcp/connection";
 import { v4 as uuidv4 } from "uuid";
 
-const API_URL = import.meta.env.VITE_MCP_REGISTRY_URL || "/api/registry";
+const API_URL = import.meta.env.VITE_MCP_REGISTRY_URL || "/api/v1/";
 
 // API interfaces
 interface RegistryServer {
@@ -42,24 +42,26 @@ interface SearchParams {
 
 // Map registry server to our ServerConfig format
 const mapToServerConfig = (server: RegistryServer): ServerConfig => {
-  const transportType: TransportType =
-    server.transport_config.type === "stdio" ? "stdio" : "sse";
+  console.log("....Mapping server:", server);
+  //  FIXME: Remove this hardcoded transport type
+  const transportType: TransportType = "sse";
+  // server.transport_config.type === "stdio" ? "stdio" : "sse";
 
   let transportConfig: any;
 
-  if (transportType === "stdio") {
-    transportConfig = {
-      command: server.transport_config.stdio?.command || "",
-      args: server.transport_config.stdio?.args || [],
-    };
-  } else {
-    transportConfig = {
-      url: server.transport_config.sse?.url || server.url,
-      messageEndpoint:
-        server.transport_config.sse?.messageEndpoint || "/messages",
-      headers: {},
-    };
-  }
+  // if (transportType === "stdio") {
+  //   transportConfig = {
+  //     command: server.transport_config.stdio?.command || "",
+  //     args: server.transport_config.stdio?.args || [],
+  //   };
+  // } else {
+  transportConfig = {
+    // url: server.transport_config.sse?.url || server.url,
+    url: server.url,
+    messageEndpoint: "/messages",
+    headers: {},
+  };
+  // }
 
   return {
     id: server.id || uuidv4(),
