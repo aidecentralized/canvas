@@ -10,8 +10,7 @@ import React, {
 interface ServerConfig {
   id: string;
   name: string;
-  command: string;
-  args: string[];
+  url: string;
 }
 
 interface SettingsContextProps {

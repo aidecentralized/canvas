@@ -1,7 +1,7 @@
 // server/src/mcp/manager.ts
 import { Server as SocketIoServer } from "socket.io";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { ToolRegistry } from "./toolRegistry.js";
 import { SessionManager } from "./sessionManager.js";
@@ -15,13 +15,13 @@ export interface McpManager {
   ) => Promise<any>;
   registerServer: (serverConfig: ServerConfig) => Promise<void>;
   getAvailableServers: () => ServerConfig[];
+  cleanup: () => Promise<void>;
 }
 
 export interface ServerConfig {
   id: string;
   name: string;
-  command: string;
-  args: string[];
+  url: string;
 }
 
 export function setupMcpManager(io: SocketIoServer): McpManager {
@@ -34,15 +34,16 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
   // Available server configurations
   const servers: ServerConfig[] = [];
 
+  // Cache of connected clients
+  const connectedClients: Map<string, Client> = new Map();
+
   const registerServer = async (serverConfig: ServerConfig): Promise<void> => {
     servers.push(serverConfig);
 
     try {
-      // Create MCP client for this server
-      const transport = new StdioClientTransport({
-        command: serverConfig.command,
-        args: serverConfig.args,
-      });
+      // Create MCP client for this server using SSE transport
+      const sseUrl = new URL(serverConfig.url);
+      const transport = new SSEClientTransport(sseUrl);
 
       const client = new Client({
         name: "mcp-host",
@@ -58,6 +59,9 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
       if (toolsResult?.tools) {
         toolRegistry.registerTools(serverConfig.id, client, toolsResult.tools);
       }
+
+      // Store the connected client for later use
+      connectedClients.set(serverConfig.id, client);
 
       console.log(
         `Registered server ${serverConfig.name} with ${
@@ -114,11 +118,25 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
     return [...servers];
   };
 
+  // Clean up connections when closing
+  const cleanup = async (): Promise<void> => {
+    for (const [serverId, client] of connectedClients.entries()) {
+      try {
+        await client.close();
+        console.log(`Closed connection to server ${serverId}`);
+      } catch (error) {
+        console.error(`Error closing connection to server ${serverId}:`, error);
+      }
+    }
+    connectedClients.clear();
+  };
+
   // Return the MCP manager interface
   return {
     discoverTools,
     executeToolCall,
     registerServer,
     getAvailableServers,
+    cleanup,
   };
 }

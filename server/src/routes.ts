@@ -190,16 +190,16 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
 
   // Server registration endpoint
   app.post("/api/servers", async (req: Request, res: Response) => {
-    const { id, name, command, args } = req.body;
+    const { id, name, url } = req.body;
 
-    if (!id || !name || !command || !args) {
+    if (!id || !name || !url) {
       return res
         .status(400)
         .json({ error: "Missing required server configuration fields" });
     }
 
     try {
-      await mcpManager.registerServer({ id, name, command, args });
+      await mcpManager.registerServer({ id, name, url });
       res.json({ success: true });
     } catch (error) {
       console.error("Error registering server:", error);

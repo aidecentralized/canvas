@@ -24,6 +24,7 @@ app.use(
 
 // Parse JSON body
 app.use(express.json());
+app.use(express.raw({ type: "application/octet-stream" }));
 
 // Setup Socket.IO
 const io = new SocketIoServer(server, {
@@ -36,6 +37,18 @@ const io = new SocketIoServer(server, {
 
 // Initialize MCP Manager
 const mcpManager = setupMcpManager(io);
+
+// Handle graceful shutdown
+process.on("SIGTERM", async () => {
+  console.log("SIGTERM received, shutting down gracefully");
+  if (mcpManager.cleanup) {
+    await mcpManager.cleanup();
+  }
+  server.close(() => {
+    console.log("Server closed");
+    process.exit(0);
+  });
+});
 
 // Setup routes
 setupRoutes(app, mcpManager);

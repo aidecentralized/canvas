@@ -46,8 +46,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [newServer, setNewServer] = useState({
     id: "",
     name: "",
-    command: "",
-    args: "",
+    url: "",
   });
   const toast = useToast();
 
@@ -76,7 +75,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 
   const handleAddServer = () => {
     // Validate server info
-    if (!newServer.id || !newServer.name || !newServer.command) {
+    if (!newServer.id || !newServer.name || !newServer.url) {
       toast({
         title: "Validation Error",
         description: "All server fields are required",
@@ -88,26 +87,34 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       return;
     }
 
-    // Parse args into array
-    const args = newServer.args
-      .split(" ")
-      .map((arg) => arg.trim())
-      .filter((arg) => arg);
+    // Validate URL
+    try {
+      new URL(newServer.url);
+    } catch (error) {
+      toast({
+        title: "Invalid URL",
+        description:
+          "Please enter a valid URL (e.g., http://localhost:3001/sse)",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
 
     // Register new server
     registerMcpServer({
       id: newServer.id,
       name: newServer.name,
-      command: newServer.command,
-      args,
+      url: newServer.url,
     });
 
     // Reset form
     setNewServer({
       id: "",
       name: "",
-      command: "",
-      args: "",
+      url: "",
     });
 
     toast({
@@ -204,7 +211,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                             ID: {server.id}
                           </Text>
                           <Text fontSize="sm" color="gray.400">
-                            Command: {server.command} {server.args.join(" ")}
+                            URL: {server.url}
                           </Text>
                         </Box>
                       ))
@@ -228,6 +235,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                           }
                           placeholder="weather"
                         />
+                        <FormHelperText>
+                          A unique identifier for this server
+                        </FormHelperText>
                       </FormControl>
 
                       <FormControl isRequired>
@@ -239,31 +249,23 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                           }
                           placeholder="Weather Server"
                         />
+                        <FormHelperText>
+                          A friendly name for this server
+                        </FormHelperText>
                       </FormControl>
 
                       <FormControl isRequired>
-                        <FormLabel>Command</FormLabel>
+                        <FormLabel>Server URL</FormLabel>
                         <Input
-                          value={newServer.command}
+                          value={newServer.url}
                           onChange={(e) =>
-                            setNewServer({
-                              ...newServer,
-                              command: e.target.value,
-                            })
+                            setNewServer({ ...newServer, url: e.target.value })
                           }
-                          placeholder="python"
+                          placeholder="http://localhost:3001/sse"
                         />
-                      </FormControl>
-
-                      <FormControl>
-                        <FormLabel>Arguments (space-separated)</FormLabel>
-                        <Input
-                          value={newServer.args}
-                          onChange={(e) =>
-                            setNewServer({ ...newServer, args: e.target.value })
-                          }
-                          placeholder="/path/to/server.py"
-                        />
+                        <FormHelperText>
+                          The SSE endpoint URL of the MCP server
+                        </FormHelperText>
                       </FormControl>
 
                       <Button

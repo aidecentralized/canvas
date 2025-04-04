@@ -2,8 +2,7 @@
 export interface ServerConfig {
   id: string;
   name: string;
-  command: string;
-  args: string[];
+  url: string;
 }
 
 export interface MessageContent {
