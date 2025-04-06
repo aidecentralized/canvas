@@ -1,23 +1,38 @@
-version: "3.8"
+version: '3.8'
 
 services:
-  mcp-client:
+  # Backend server
+  server:
     build:
       context: .
-      dockerfile: Dockerfile
-    ports:
-      - "3000:80"
-    env_file:
-      - .env
-    volumes:
-      - ./nginx:/etc/nginx/conf.d
+      dockerfile: Dockerfile.server
+    container_name: mcp-host-server
     restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - CLIENT_URL=http://localhost:3000
+    volumes:
+      - ./server/logs:/app/logs
+    networks:
+      - mcp-network
 
-  # Optional: MCP Registry proxy (if you want to run a local registry server)
-  # mcp-registry:
-  #   image: nginx:stable-alpine
-  #   ports:
-  #     - "8080:80"
-  #   volumes:
-  #     - ./nginx/registry-proxy.conf:/etc/nginx/conf.d/default.conf
-  #   restart: unless-stopped
+  # Frontend client
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: mcp-host-client
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - server
+    networks:
+      - mcp-network
+
+networks:
+  mcp-network:
+    driver: bridge

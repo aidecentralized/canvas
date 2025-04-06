@@ -1,4 +1,8 @@
-node_modules
-dist
-package-lock.json
-yarn-error.log
+server/node_modules
+server/package-lock.json
+server/dist
+server/logs
+client/node_modules
+client/dist
+client/package-lock.json
+client/build

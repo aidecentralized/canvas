@@ -1,123 +1,164 @@
-# MCP Client
+# MCP Host
 
-A React-based client application for interacting with AI models and MCP (Model Context Protocol) servers. This application provides a chatbot-like interface that connects to Claude or OpenAI APIs for AI interactions, while supporting tool discovery and selection through the MCP protocol.
+MCP Host is a complete end-to-end implementation of a Model Context Protocol (MCP) host with an in-built MCP client. It provides a beautiful, polished chat interface with tool selection capabilities using MCP.
+
+![MCP Host Screenshot](/path/to/screenshot.png)
 
 ## Features
 
-- 🤖 **AI Integration**: Connect to Claude or OpenAI models for natural language conversations
-- 🔌 **MCP Support**: Discover and connect to MCP servers for enhanced tool capabilities
-- 🔎 **Tool Discovery**: Search and browse available tools from connected MCP servers
-- 💬 **Chat Interface**: Modern, responsive chat UI with message history
-- 🔧 **Tool Selection**: Intelligently recommend and use tools based on conversation context
-- 🔒 **API Key Management**: Secure storage and management of API keys
-- 🐳 **Docker Support**: Easy deployment with Docker containers
+- **Beautiful Chat Interface**: A clean, modern UI with glassmorphism design and a crimson color theme
+- **MCP Client Integration**: Discover and use tools from MCP servers
+- **Anthropic API Integration**: Powered by Claude, one of the most capable AI assistants
+- **Server-Side Processing**: Backend handles communication with Anthropic and MCP servers
+- **Docker Support**: Easy local deployment with Docker
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js v18+
-- npm or yarn
-- Docker (optional, for containerized deployment)
-- Valid API keys for Anthropic Claude and/or OpenAI
+- [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/)
+- An [Anthropic API key](https://console.anthropic.com/)
 
-### Installation
-
-#### Local Development
+### Running with Docker
 
 1. Clone the repository:
 
-   ```
-   git clone https://github.com/yourusername/mcp-client.git
-   cd mcp-client
-   ```
-
-2. Install dependencies:
-
-   ```
-   npm install
+   ```bash
+   git clone https://github.com/yourusername/mcp-host.git
+   cd mcp-host
    ```
 
-3. Create a `.env` file from the example:
+2. Start the application with Docker Compose:
 
-   ```
-   cp .env.example .env
-   ```
-
-4. Fill in your API keys and configuration in the `.env` file
-
-5. Start the development server:
-
-   ```
-   npm run dev
-   ```
-
-6. Open your browser and navigate to `http://localhost:3000`
-
-#### Docker Deployment
-
-1. Clone the repository:
-
-   ```
-   git clone https://github.com/yourusername/mcp-client.git
-   cd mcp-client
-   ```
-
-2. Create a `.env` file and fill in your configuration
-
-3. Build and run with Docker Compose:
-
-   ```
+   ```bash
    docker-compose up -d
    ```
 
-4. Access the application at `http://localhost:3000`
+3. Access the application at [http://localhost:3000](http://localhost:3000)
 
-## Usage
+4. In the app, click the gear icon to open settings and enter your Anthropic API key
 
-### Configuring API Keys
+### Development Setup
 
-1. Navigate to the Settings page
-2. Enter your Anthropic Claude API key and/or OpenAI API key
-3. Save your settings
+If you want to run the application in development mode:
 
-### Connecting to MCP Servers
+#### Server
 
-1. Go to the Tools page
-2. Click "Add Server" to manually add a server or "Discover Servers" to search for available ones
-3. Configure the server connection details and enable it
+```bash
+cd server
+npm install
+npm run dev
+```
 
-### Starting a Conversation
+#### Client
 
-1. Navigate to the Chat page
-2. Type your message in the input box and press Enter or click the send button
-3. The AI will respond and may suggest relevant tools based on the conversation context
-4. Select tools to enhance the AI's capabilities
+```bash
+cd client
+npm install
+npm start
+```
+
+## Configuring MCP Servers
+
+MCP Host can connect to multiple MCP servers using Server-Sent Events (SSE). To add a server:
+
+1. Open the application and click the gear icon to access settings
+2. Go to the "MCP Servers" tab
+3. Fill in the server details:
+   - **Server ID**: A unique identifier for the server
+   - **Server Name**: A human-readable name
+   - **Server URL**: The SSE endpoint URL of the MCP server (e.g., `http://localhost:3001/sse`)
+4. Click "Add Server"
+
+### Example MCP Server Setup
+
+Here's an example of how to set up an MCP server with SSE transport that's compatible with MCP Host:
+
+```typescript
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import express from "express";
+import { z } from "zod";
+
+// Create an MCP server
+const server = new McpServer({
+  name: "MyServer",
+  version: "1.0.0",
+});
+
+// Add your tools
+server.tool("my-tool", { param: z.string() }, async ({ param }) => ({
+  content: [{ type: "text", text: `You sent: ${param}` }],
+}));
+
+// Set up Express app
+const app = express();
+const port = 3001;
+
+// To support multiple simultaneous connections, we use a lookup object
+const transports: { [sessionId: string]: SSEServerTransport } = {};
+
+// SSE endpoint
+app.get("/sse", async (_, res) => {
+  const transport = new SSEServerTransport("/messages", res);
+  transports[transport.sessionId] = transport;
+
+  res.on("close", () => {
+    delete transports[transport.sessionId];
+  });
+
+  await server.connect(transport);
+});
+
+// Message handling endpoint
+app.post("/messages", async (req, res) => {
+  const sessionId = req.query.sessionId as string;
+  const transport = transports[sessionId];
+
+  if (transport) {
+    await transport.handlePostMessage(req, res);
+  } else {
+    res.status(400).send("No transport found for sessionId");
+  }
+});
+
+// Start the server
+app.listen(port, () => {
+  console.log(`MCP server running on http://localhost:${port}`);
+});
+```
+
+You can then add this server to MCP Host using the URL `http://localhost:3001/sse`.
 
 ## Architecture
 
-The application follows a component-based architecture using React and TypeScript. It uses:
+MCP Host consists of:
 
-- React with TypeScript for type safety
-- Context API for state management across components
-- Tailwind CSS for styling
-- Axios for API communication
-- MCP SDK for protocol implementation
+- **Frontend**: React application with Chakra UI
+- **Backend**: Node.js server with Express
+- **MCP Client**: Integrated client using the official MCP SDK with SSE transport
 
-The main components include:
+The application follows a clean architecture pattern with separation of concerns:
 
-- Chat interface for user interactions
-- MCP connection manager for server discovery and tool management
-- API clients for Claude and OpenAI integration
-- Settings management for user preferences
+- **Client**: UI components, contexts for state management
+- **Server**: API endpoints, MCP integration, tool execution
+- **Shared**: Common types used by both client and server
+
+### Communication Protocol
+
+MCP Host uses Server-Sent Events (SSE) for communication with MCP servers. This approach offers several advantages:
+
+1. **Web Compatibility**: SSE works over standard HTTP, making it compatible with web servers and accessible over networks
+2. **No File System Access Required**: Unlike stdio transport, SSE doesn't require access to the local file system
+3. **Multiple Connections**: Supports connections to multiple MCP servers simultaneously
+4. **Docker Friendly**: Works well in containerized environments since it doesn't rely on process spawning
 
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Acknowledgments
+## Acknowledgements
 
-- [Anthropic](https://www.anthropic.com/) for the Claude API and MCP specification
-- [OpenAI](https://openai.com/) for the OpenAI API
-- [Model Context Protocol](https://modelcontextprotocol.io/) community for the protocol implementation
-- All the open-source libraries and tools used in this project
+- [Model Context Protocol](https://modelcontextprotocol.io/) for the MCP standard
+- [Anthropic](https://www.anthropic.com/) for the Claude AI assistant
+- [Chakra UI](https://chakra-ui.com/) for the UI components

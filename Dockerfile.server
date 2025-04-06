@@ -1,0 +1,26 @@
+# Dockerfile.server
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY server/package*.json ./
+COPY server/tsconfig.json ./
+RUN npm install
+
+# Copy source code
+COPY server/src ./src
+COPY shared/ ./shared/
+
+# Build the application
+RUN npm run build
+
+# Expose the server port
+EXPOSE 4000
+
+# Set environment variables
+ENV NODE_ENV=production
+ENV PORT=4000
+
+# Start the server
+CMD ["node", "dist/index.js"]
