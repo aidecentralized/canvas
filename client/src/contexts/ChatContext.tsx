@@ -102,18 +102,21 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         }));
 
         // Send request to our backend
-        const response = await fetch("/api/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-API-Key": apiKey,
-            "X-Session-Id": sessionId.current,
-          },
-          body: JSON.stringify({
-            messages: apiMessages,
-            tools: true,
-          }),
-        });
+        const response = await fetch(
+          `${process.env.REACT_APP_API_BASE_URL}/api/chat/completions`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-API-Key": apiKey,
+              "X-Session-Id": sessionId.current,
+            },
+            body: JSON.stringify({
+              messages: apiMessages,
+              tools: true,
+            }),
+          }
+        );
 
         if (!response.ok) {
           const errorData = await response.json();
