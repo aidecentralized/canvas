@@ -19,6 +19,7 @@ interface SettingsContextProps {
   mcpServers: ServerConfig[];
   registerMcpServer: (server: ServerConfig) => void;
   removeMcpServer: (id: string) => void;
+  refreshRegistry: () => Promise<{ servers: ServerConfig[] }>;
 }
 
 const SettingsContext = createContext<SettingsContextProps>({
@@ -27,6 +28,7 @@ const SettingsContext = createContext<SettingsContextProps>({
   mcpServers: [],
   registerMcpServer: () => {},
   removeMcpServer: () => {},
+  refreshRegistry: async () => ({ servers: [] }),
 });
 
 export const useSettingsContext = () => useContext(SettingsContext);
@@ -93,7 +95,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
       localStorage.setItem(MCP_SERVERS_STORAGE_KEY, JSON.stringify(newServers));
 
       // Also register with backend
-      fetch("/api/servers", {
+      fetch(`${process.env.REACT_APP_API_BASE_URL}/api/servers`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -123,7 +125,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
       const registerAllServers = async () => {
         for (const server of mcpServers) {
           try {
-            await fetch("/api/servers", {
+            await fetch(`${process.env.REACT_APP_API_BASE_URL}/api/servers`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -143,6 +145,34 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
     }
   }, []);
 
+  // Refresh servers from registry
+  const refreshRegistry = useCallback(async () => {
+    try {
+      const response = await fetch(
+        `${process.env.REACT_APP_API_BASE_URL}/api/registry/refresh`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.error || "Failed to refresh servers from registry"
+        );
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error("Error refreshing servers from registry:", error);
+      throw error;
+    }
+  }, []);
+
   return (
     <SettingsContext.Provider
       value={{
@@ -151,6 +181,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
         mcpServers,
         registerMcpServer,
         removeMcpServer,
+        refreshRegistry,
       }}
     >
       {children}
