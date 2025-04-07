@@ -48,7 +48,7 @@ const ChatInterface: React.FC = () => {
       >
         <Icon as={FaRobot} boxSize={5} mr={2} color="crimson.200" />
         <Text fontWeight="bold" fontSize="lg">
-          MCP Chatbot
+          Nanda Chat Interface
         </Text>
       </Flex>
 
@@ -84,11 +84,12 @@ const ChatInterface: React.FC = () => {
           >
             <Icon as={FaTools} boxSize={12} mb={4} color="crimson.300" />
             <Text fontSize="xl" fontWeight="bold" mb={2}>
-              Welcome to MCP Chatbot
+              Welcome to Nanda Chat Interface
             </Text>
             <Text mb={4}>
-              This chatbot uses the Model Context Protocol to enhance
-              capabilities with tools. Ask me anything, and I'll try to help!
+              This AI uses the Nanda Protocol to enhance capabilities with
+              tools. Ask me anything, and I'll try to help by using my
+              intelligence and other tools and knowledge.
             </Text>
             <Box>
               <Text fontWeight="semibold" mb={2}>
@@ -99,7 +100,7 @@ const ChatInterface: React.FC = () => {
                 variant="outline"
                 mb={2}
                 onClick={() => {
-                  // Add example prompt handler
+                  // Enter message to ask about available tools
                 }}
               >
                 "What tools do you have available?"
