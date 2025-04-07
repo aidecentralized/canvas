@@ -133,7 +133,6 @@ const ChatInterface: React.FC = () => {
                 />
                 <Text fontWeight="bold" fontSize="sm">
                   {" "}
-                  // Adjusted font size for better alignment
                   {message.role === "user" ? "You" : "Assistant"}
                 </Text>
               </Flex>
