@@ -137,7 +137,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
           <Tabs variant="soft-rounded" colorScheme="crimson">
             <TabList>
               <Tab>API</Tab>
-              <Tab>MCP Servers</Tab>
+              <Tab>Nanda Servers</Tab>
               <Tab>About</Tab>
             </TabList>
 
@@ -186,12 +186,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 </VStack>
               </TabPanel>
 
-              {/* MCP Servers Tab */}
+              {/* Nanda Servers Tab */}
               <TabPanel>
                 <VStack spacing={4} align="stretch">
                   <Box>
                     <Heading size="sm" mb={2}>
-                      Registered Servers
+                      Registered Nanda Servers
                     </Heading>
                     {nandaServers.length === 0 ? (
                       <Text color="gray.400">No servers registered yet</Text>
@@ -264,7 +264,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                           placeholder="http://localhost:3001/sse"
                         />
                         <FormHelperText>
-                          The SSE endpoint URL of the MCP server
+                          The SSE endpoint URL of the Nanda server
                         </FormHelperText>
                       </FormControl>
 
@@ -283,20 +283,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
               {/* About Tab */}
               <TabPanel>
                 <VStack spacing={4} align="stretch">
-                  <Heading size="md">MCP Host</Heading>
+                  <Heading size="md">Nanda Host</Heading>
                   <Text>
-                    A beautiful chat interface with Model Context Protocol (MCP)
-                    integration for enhanced capabilities through tools.
+                    A beautiful chat interface with Nanda integration for
+                    enhanced capabilities through agents, resources, and tools.
                   </Text>
 
                   <Box p={3} borderRadius="md" bg="rgba(0, 0, 0, 0.2)">
                     <Heading size="sm" mb={2}>
-                      What is MCP?
+                      What is Nanda?
                     </Heading>
                     <Text fontSize="sm">
-                      The Model Context Protocol (MCP) is an open standard for
-                      connecting LLMs with external tools and data sources. It
-                      enables LLMs to discover and execute tools, access
+                      Nanda is an open standard built on top of MCP for enabling
+                      coordination between agents, resources and tools (ARTs).
+                      It enables LLMs to discover and execute tools, access
                       resources, and use predefined prompts.
                     </Text>
                   </Box>
