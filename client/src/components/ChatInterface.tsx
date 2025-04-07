@@ -30,8 +30,8 @@ const ChatInterface: React.FC = () => {
   return (
     <Box
       width="100%"
-      maxWidth="900px"
-      height="80vh"
+      maxWidth="1200px" // Increased max width for larger screens
+      height="90vh" // Increased height to occupy more vertical space
       {...theme.glassmorphism.card}
       p={0}
       position="relative"
@@ -120,6 +120,8 @@ const ChatInterface: React.FC = () => {
               borderRadius="lg"
               borderTopRightRadius={message.role === "user" ? "0" : "lg"}
               borderTopLeftRadius={message.role === "user" ? "lg" : "0"}
+              wordBreak="break-word" // Ensures text wraps within the box
+              boxShadow="md" // Adds a subtle shadow for better visibility
             >
               <Flex align="center" mb={2}>
                 <Icon
@@ -128,7 +130,9 @@ const ChatInterface: React.FC = () => {
                   mr={2}
                   color={message.role === "user" ? "white" : "crimson.200"}
                 />
-                <Text fontWeight="bold">
+                <Text fontWeight="bold" fontSize="sm">
+                  {" "}
+                  // Adjusted font size for better alignment
                   {message.role === "user" ? "You" : "Assistant"}
                 </Text>
               </Flex>

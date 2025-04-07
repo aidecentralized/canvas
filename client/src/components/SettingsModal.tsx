@@ -39,7 +39,7 @@ interface SettingsModalProps {
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
-  const { apiKey, setApiKey, mcpServers, registerMcpServer } =
+  const { apiKey, setApiKey, nandaServers, registerNandaServer } =
     useSettingsContext();
   const [tempApiKey, setTempApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
@@ -104,7 +104,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }
 
     // Register new server
-    registerMcpServer({
+    registerNandaServer({
       id: newServer.id,
       name: newServer.name,
       url: newServer.url,
@@ -193,10 +193,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                     <Heading size="sm" mb={2}>
                       Registered Servers
                     </Heading>
-                    {mcpServers.length === 0 ? (
+                    {nandaServers.length === 0 ? (
                       <Text color="gray.400">No servers registered yet</Text>
                     ) : (
-                      mcpServers.map((server) => (
+                      nandaServers.map((server) => (
                         <Box
                           key={server.id}
                           p={3}
