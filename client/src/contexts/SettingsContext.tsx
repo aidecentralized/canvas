@@ -16,26 +16,26 @@ interface ServerConfig {
 interface SettingsContextProps {
   apiKey: string | null;
   setApiKey: (key: string) => void;
-  mcpServers: ServerConfig[];
-  registerMcpServer: (server: ServerConfig) => void;
-  removeMcpServer: (id: string) => void;
+  nandaServers: ServerConfig[];
+  registerNandaServer: (server: ServerConfig) => void;
+  removeNandaServer: (id: string) => void;
   refreshRegistry: () => Promise<{ servers: ServerConfig[] }>;
 }
 
 const SettingsContext = createContext<SettingsContextProps>({
   apiKey: null,
   setApiKey: () => {},
-  mcpServers: [],
-  registerMcpServer: () => {},
-  removeMcpServer: () => {},
+  nandaServers: [],
+  registerNandaServer: () => {},
+  removeNandaServer: () => {},
   refreshRegistry: async () => ({ servers: [] }),
 });
 
 export const useSettingsContext = () => useContext(SettingsContext);
 
 // Local storage keys
-const API_KEY_STORAGE_KEY = "mcp_host_api_key";
-const MCP_SERVERS_STORAGE_KEY = "mcp_host_servers";
+const API_KEY_STORAGE_KEY = "nanda_host_api_key";
+const NANDA_SERVERS_STORAGE_KEY = "nanda_host_servers";
 
 interface SettingsProviderProps {
   children: React.ReactNode;
@@ -45,7 +45,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
   children,
 }) => {
   const [apiKey, setApiKeyState] = useState<string | null>(null);
-  const [mcpServers, setMcpServers] = useState<ServerConfig[]>([]);
+  const [nandaServers, setNandaServers] = useState<ServerConfig[]>([]);
 
   // Load settings from local storage on mount
   useEffect(() => {
@@ -55,16 +55,16 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
       setApiKeyState(storedApiKey);
     }
 
-    // Load MCP servers
-    const storedServers = localStorage.getItem(MCP_SERVERS_STORAGE_KEY);
+    // Load Nanda servers
+    const storedServers = localStorage.getItem(NANDA_SERVERS_STORAGE_KEY);
     if (storedServers) {
       try {
         const parsedServers = JSON.parse(storedServers);
         if (Array.isArray(parsedServers)) {
-          setMcpServers(parsedServers);
+          setNandaServers(parsedServers);
         }
       } catch (error) {
-        console.error("Failed to parse stored MCP servers:", error);
+        console.error("Failed to parse stored Nanda servers:", error);
       }
     }
   }, []);
@@ -75,9 +75,9 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
     localStorage.setItem(API_KEY_STORAGE_KEY, key);
   }, []);
 
-  // Register MCP server
-  const registerMcpServer = useCallback((server: ServerConfig) => {
-    setMcpServers((prevServers) => {
+  // Register Nanda server
+  const registerNandaServer = useCallback((server: ServerConfig) => {
+    setNandaServers((prevServers) => {
       // Check if server with this ID already exists
       const existingIndex = prevServers.findIndex((s) => s.id === server.id);
       let newServers: ServerConfig[];
@@ -92,7 +92,10 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
       }
 
       // Save to local storage
-      localStorage.setItem(MCP_SERVERS_STORAGE_KEY, JSON.stringify(newServers));
+      localStorage.setItem(
+        NANDA_SERVERS_STORAGE_KEY,
+        JSON.stringify(newServers)
+      );
 
       // Also register with backend
       fetch(`${process.env.REACT_APP_API_BASE_URL}/api/servers`, {
@@ -109,21 +112,24 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
     });
   }, []);
 
-  // Remove MCP server
-  const removeMcpServer = useCallback((id: string) => {
-    setMcpServers((prevServers) => {
+  // Remove Nanda server
+  const removeNandaServer = useCallback((id: string) => {
+    setNandaServers((prevServers) => {
       const newServers = prevServers.filter((server) => server.id !== id);
-      localStorage.setItem(MCP_SERVERS_STORAGE_KEY, JSON.stringify(newServers));
+      localStorage.setItem(
+        NANDA_SERVERS_STORAGE_KEY,
+        JSON.stringify(newServers)
+      );
       return newServers;
     });
   }, []);
 
   // Register servers with backend on initial load
   useEffect(() => {
-    if (mcpServers.length > 0) {
+    if (nandaServers.length > 0) {
       // Register all servers with the backend
       const registerAllServers = async () => {
-        for (const server of mcpServers) {
+        for (const server of nandaServers) {
           try {
             await fetch(`${process.env.REACT_APP_API_BASE_URL}/api/servers`, {
               method: "POST",
@@ -178,9 +184,9 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
       value={{
         apiKey,
         setApiKey,
-        mcpServers,
-        registerMcpServer,
-        removeMcpServer,
+        nandaServers,
+        registerNandaServer,
+        removeNandaServer,
         refreshRegistry,
       }}
     >
