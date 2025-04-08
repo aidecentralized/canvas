@@ -6,12 +6,7 @@ import React, {
   useEffect,
   useCallback,
 } from "react";
-
-interface ServerConfig {
-  id: string;
-  name: string;
-  url: string;
-}
+import { ServerConfig, ToolCredentialInfo, ToolCredentialRequest } from "../../shared/types";
 
 interface SettingsContextProps {
   apiKey: string | null;
@@ -20,6 +15,12 @@ interface SettingsContextProps {
   registerNandaServer: (server: ServerConfig) => void;
   removeNandaServer: (id: string) => void;
   refreshRegistry: () => Promise<{ servers: ServerConfig[] }>;
+  getToolsWithCredentialRequirements: () => Promise<ToolCredentialInfo[]>;
+  setToolCredentials: (
+    toolName: string, 
+    serverId: string, 
+    credentials: Record<string, string>
+  ) => Promise<boolean>;
 }
 
 const SettingsContext = createContext<SettingsContextProps>({
@@ -29,6 +30,8 @@ const SettingsContext = createContext<SettingsContextProps>({
   registerNandaServer: () => {},
   removeNandaServer: () => {},
   refreshRegistry: async () => ({ servers: [] }),
+  getToolsWithCredentialRequirements: async () => [],
+  setToolCredentials: async () => false,
 });
 
 export const useSettingsContext = () => useContext(SettingsContext);
@@ -46,6 +49,34 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
 }) => {
   const [apiKey, setApiKeyState] = useState<string | null>(null);
   const [nandaServers, setNandaServers] = useState<ServerConfig[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
+  // Initialize session on mount
+  useEffect(() => {
+    const createSession = async () => {
+      try {
+        const response = await fetch(`${process.env.REACT_APP_API_BASE_URL}/api/session`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
+        
+        if (!response.ok) {
+          throw new Error("Failed to create session");
+        }
+        
+        const data = await response.json();
+        setSessionId(data.sessionId);
+      } catch (error) {
+        console.error("Error creating session:", error);
+        // Fallback to a local session ID if needed
+        setSessionId("local-" + Math.random().toString(36).substring(2, 15));
+      }
+    };
+    
+    createSession();
+  }, []);
 
   // Load settings from local storage on mount
   useEffect(() => {
@@ -151,6 +182,74 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
     }
   }, []);
 
+  // Get tools that require credentials
+  const getToolsWithCredentialRequirements = useCallback(async (): Promise<ToolCredentialInfo[]> => {
+    if (!sessionId) return [];
+    
+    try {
+      const response = await fetch(
+        `${process.env.REACT_APP_API_BASE_URL}/api/tools/credentials`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Session-ID": sessionId,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to get tools with credential requirements");
+      }
+
+      const data = await response.json();
+      return data.tools || [];
+    } catch (error) {
+      console.error("Error getting tools with credential requirements:", error);
+      return [];
+    }
+  }, [sessionId]);
+
+  // Set credentials for a tool
+  const setToolCredentials = useCallback(
+    async (
+      toolName: string,
+      serverId: string,
+      credentials: Record<string, string>
+    ): Promise<boolean> => {
+      if (!sessionId) return false;
+      
+      try {
+        const response = await fetch(
+          `${process.env.REACT_APP_API_BASE_URL}/api/tools/credentials`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Session-ID": sessionId,
+            },
+            body: JSON.stringify({
+              toolName,
+              serverId,
+              credentials,
+            } as ToolCredentialRequest),
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to set tool credentials");
+        }
+
+        const data = await response.json();
+        return data.success || false;
+      } catch (error) {
+        console.error(`Error setting credentials for tool ${toolName}:`, error);
+        return false;
+      }
+    },
+    [sessionId]
+  );
+
   // Refresh servers from registry
   const refreshRegistry = useCallback(async () => {
     try {
@@ -188,6 +287,8 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
         registerNandaServer,
         removeNandaServer,
         refreshRegistry,
+        getToolsWithCredentialRequirements,
+        setToolCredentials,
       }}
     >
       {children}

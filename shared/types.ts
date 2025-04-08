@@ -60,12 +60,44 @@ export interface ApiKeyResponse {
   success: boolean;
 }
 
+// New interfaces for tool credential management
+export interface CredentialRequirement {
+  id: string;
+  name: string;
+  description?: string;
+  acquisition?: {
+    url?: string;
+    instructions?: string;
+  };
+}
+
+export interface ToolCredentialInfo {
+  toolName: string;
+  serverName: string;
+  serverId: string;
+  credentials: CredentialRequirement[];
+}
+
+export interface ToolCredentialRequest {
+  toolName: string;
+  serverId: string;
+  credentials: Record<string, string>;
+}
+
+export interface ToolCredentialResponse {
+  success: boolean;
+  error?: string;
+}
+
+export interface ToolInfo {
+  name: string;
+  description?: string;
+  inputSchema: any;
+  credentialRequirements?: CredentialRequirement[];
+}
+
 export interface ToolsListResponse {
-  tools: Array<{
-    name: string;
-    description?: string;
-    inputSchema: any;
-  }>;
+  tools: ToolInfo[];
 }
 
 export interface ServersListResponse {

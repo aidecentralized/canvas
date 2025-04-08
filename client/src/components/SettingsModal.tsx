@@ -24,23 +24,195 @@ import {
   Text,
   Divider,
   Flex,
-  Switch,
+  Link,
   useToast,
   IconButton,
   InputGroup,
   InputRightElement,
+  Accordion,
+  AccordionItem,
+  AccordionButton,
+  AccordionPanel,
+  AccordionIcon,
 } from "@chakra-ui/react";
-import { FaEye, FaEyeSlash, FaPlus } from "react-icons/fa";
+import { FaEye, FaEyeSlash, FaPlus, FaExternalLinkAlt } from "react-icons/fa";
 import { useSettingsContext } from "../contexts/SettingsContext";
+import { ToolCredentialInfo, CredentialRequirement } from "../../shared/types";
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+// Component for a single tool credential form
+interface ToolCredentialFormProps {
+  tool: ToolCredentialInfo;
+  onSave: (
+    toolName: string,
+    serverId: string,
+    credentials: Record<string, string>
+  ) => Promise<boolean>;
+}
+
+const ToolCredentialForm: React.FC<ToolCredentialFormProps> = ({ 
+  tool, 
+  onSave 
+}) => {
+  const [credentials, setCredentials] = useState<Record<string, string>>({});
+  const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+  const [isSaving, setIsSaving] = useState(false);
+  const toast = useToast();
+
+  const handleInputChange = (id: string, value: string) => {
+    setCredentials((prev) => ({
+      ...prev,
+      [id]: value,
+    }));
+  };
+
+  const togglePasswordVisibility = (id: string) => {
+    setShowPasswords((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
+  const handleSave = async () => {
+    // Check that all required fields are filled
+    const missingFields = tool.credentials
+      .map(cred => cred.id)
+      .filter(id => !credentials[id]);
+
+    if (missingFields.length > 0) {
+      toast({
+        title: "Missing credentials",
+        description: `Please fill in all required fields: ${missingFields.join(", ")}`,
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const success = await onSave(tool.toolName, tool.serverId, credentials);
+      
+      if (success) {
+        toast({
+          title: "Credentials saved",
+          description: `Credentials for ${tool.toolName} have been saved`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+        });
+      } else {
+        throw new Error("Failed to save credentials");
+      }
+    } catch (error) {
+      toast({
+        title: "Error saving credentials",
+        description: error instanceof Error ? error.message : "Unknown error",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <Box 
+      p={4} 
+      mb={4} 
+      borderRadius="md" 
+      borderLeft="3px solid" 
+      borderLeftColor="crimson.500"
+      bg="rgba(0, 0, 0, 0.2)"
+    >
+      <Heading size="sm" mb={2}>
+        {tool.toolName}
+      </Heading>
+      <Text fontSize="sm" color="gray.400" mb={3}>
+        Server: {tool.serverName}
+      </Text>
+
+      <VStack spacing={3} align="stretch">
+        {tool.credentials.map((cred) => (
+          <FormControl key={cred.id} isRequired>
+            <FormLabel>{cred.name || cred.id}</FormLabel>
+            <InputGroup>
+              <Input
+                type={showPasswords[cred.id] ? "text" : "password"}
+                value={credentials[cred.id] || ""}
+                onChange={(e) => handleInputChange(cred.id, e.target.value)}
+                placeholder={`Enter ${cred.name || cred.id}`}
+              />
+              <InputRightElement>
+                <IconButton
+                  aria-label={
+                    showPasswords[cred.id] ? "Hide credential" : "Show credential"
+                  }
+                  icon={showPasswords[cred.id] ? <FaEyeSlash /> : <FaEye />}
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => togglePasswordVisibility(cred.id)}
+                />
+              </InputRightElement>
+            </InputGroup>
+            {cred.description && (
+              <FormHelperText>{cred.description}</FormHelperText>
+            )}
+          </FormControl>
+        ))}
+
+        {tool.credentials.some(cred => cred.acquisition?.url) && (
+          <Box mt={2} mb={3}>
+            <Text fontSize="sm" fontWeight="bold">
+              Where to get credentials:
+            </Text>
+            {tool.credentials
+              .filter(cred => cred.acquisition?.url)
+              .map(cred => (
+                <Flex key={`acq-${cred.id}`} mt={1} alignItems="center">
+                  <Link 
+                    href={cred.acquisition?.url}
+                    isExternal
+                    color="crimson.400"
+                    fontSize="sm"
+                    mr={1}
+                  >
+                    {cred.name} credentials
+                  </Link>
+                  <FaExternalLinkAlt size="0.6em" color="gray" />
+                </Flex>
+              ))}
+          </Box>
+        )}
+
+        <Button 
+          colorScheme="crimson" 
+          onClick={handleSave}
+          isLoading={isSaving}
+        >
+          Save Credentials
+        </Button>
+      </VStack>
+    </Box>
+  );
+};
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
-  const { apiKey, setApiKey, nandaServers, registerNandaServer } =
-    useSettingsContext();
+  const { 
+    apiKey, 
+    setApiKey, 
+    nandaServers, 
+    registerNandaServer,
+    getToolsWithCredentialRequirements,
+    setToolCredentials
+  } = useSettingsContext();
+  
   const [tempApiKey, setTempApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [newServer, setNewServer] = useState({
@@ -48,6 +220,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     name: "",
     url: "",
   });
+  const [toolsWithCredentials, setToolsWithCredentials] = useState<ToolCredentialInfo[]>([]);
+  const [isLoadingTools, setIsLoadingTools] = useState(false);
   const toast = useToast();
 
   // Reset temp values when modal opens
@@ -55,8 +229,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     if (isOpen) {
       setTempApiKey(apiKey || "");
       setShowApiKey(false);
+      loadToolsWithCredentials();
     }
   }, [isOpen, apiKey]);
+
+  const loadToolsWithCredentials = async () => {
+    setIsLoadingTools(true);
+    try {
+      const tools = await getToolsWithCredentialRequirements();
+      setToolsWithCredentials(tools);
+    } catch (error) {
+      console.error("Failed to load tools with credential requirements:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load tools that require credentials",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setIsLoadingTools(false);
+    }
+  };
 
   const handleSaveApiKey = () => {
     setApiKey(tempApiKey);
@@ -117,6 +311,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       url: "",
     });
 
+    // Reload tools with credentials after adding a server
+    setTimeout(() => {
+      loadToolsWithCredentials();
+    }, 1000);
+
     toast({
       title: "Server Added",
       description: `Server "${newServer.name}" has been added`,
@@ -138,6 +337,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             <TabList>
               <Tab>API</Tab>
               <Tab>Nanda Servers</Tab>
+              <Tab>Tool Credentials</Tab>
               <Tab>About</Tab>
             </TabList>
 
@@ -277,6 +477,51 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                       </Button>
                     </VStack>
                   </Box>
+                </VStack>
+              </TabPanel>
+
+              {/* Tool Credentials Tab */}
+              <TabPanel>
+                <VStack spacing={4} align="stretch">
+                  <Heading size="sm" mb={2}>
+                    Tool API Credentials
+                  </Heading>
+                  <Text fontSize="sm" color="gray.400" mb={4}>
+                    Some tools require API keys or other credentials to function. 
+                    Configure them here.
+                  </Text>
+                  
+                  {isLoadingTools ? (
+                    <Text>Loading tools...</Text>
+                  ) : toolsWithCredentials.length === 0 ? (
+                    <Text color="gray.400">
+                      No tools requiring credentials found. Try adding servers with tools that need credentials.
+                    </Text>
+                  ) : (
+                    <Accordion allowToggle defaultIndex={[0]}>
+                      {toolsWithCredentials.map((tool, index) => (
+                        <AccordionItem key={`${tool.serverId}-${tool.toolName}`} border="none">
+                          <h2>
+                            <AccordionButton 
+                              _hover={{ bg: "rgba(255, 255, 255, 0.05)" }}
+                              borderRadius="md"
+                            >
+                              <Box as="span" flex='1' textAlign='left'>
+                                {tool.toolName}
+                              </Box>
+                              <AccordionIcon />
+                            </AccordionButton>
+                          </h2>
+                          <AccordionPanel pb={4}>
+                            <ToolCredentialForm
+                              tool={tool}
+                              onSave={setToolCredentials}
+                            />
+                          </AccordionPanel>
+                        </AccordionItem>
+                      ))}
+                    </Accordion>
+                  )}
                 </VStack>
               </TabPanel>
 
