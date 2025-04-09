@@ -24,8 +24,8 @@ MCP Host is a complete end-to-end implementation of a Model Context Protocol (MC
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/yourusername/mcp-host.git
-   cd mcp-host
+   git clone https://github.com/aidecentralized/canvas.git
+   cd canvas
    ```
 
 2. Start the application with Docker Compose:
