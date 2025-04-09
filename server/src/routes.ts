@@ -188,6 +188,54 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
     }
   });
 
+  // NEW: Get tools that require credentials
+  app.get("/api/tools/credentials", (req: Request, res: Response) => {
+    try {
+      const sessionId = (req.headers["x-session-id"] as string) || "12345";
+      const tools = mcpManager.getToolsWithCredentialRequirements(sessionId);
+      res.json({ tools });
+    } catch (error) {
+      console.error("Error getting tools with credential requirements:", error);
+      res.status(500).json({
+        error: error.message || "An error occurred while fetching tools",
+      });
+    }
+  });
+
+  // NEW: Set credentials for a tool
+  app.post("/api/tools/credentials", async (req: Request, res: Response) => {
+    const { toolName, serverId, credentials } = req.body;
+    const sessionId = (req.headers["x-session-id"] as string) || "12345";
+
+    if (!toolName || !serverId || !credentials) {
+      return res.status(400).json({ 
+        error: "Missing required fields. toolName, serverId, and credentials are required" 
+      });
+    }
+
+    try {
+      const success = await mcpManager.setToolCredentials(
+        sessionId,
+        toolName,
+        serverId,
+        credentials
+      );
+
+      if (success) {
+        res.json({ success: true });
+      } else {
+        res.status(500).json({ 
+          error: "Failed to set credentials for the tool" 
+        });
+      }
+    } catch (error) {
+      console.error(`Error setting credentials for tool ${toolName}:`, error);
+      res.status(500).json({
+        error: error.message || "An error occurred while setting credentials",
+      });
+    }
+  });
+
   // Server registration endpoint
   app.post("/api/servers", async (req: Request, res: Response) => {
     const { id, name, url } = req.body;

@@ -5,9 +5,10 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { ToolRegistry } from "./toolRegistry.js";
 import { SessionManager } from "./sessionManager.js";
+import { ToolInfo, ToolCredentialInfo } from "../../shared/types.js";
 
 export interface McpManager {
-  discoverTools: (sessionId: string) => Promise<Tool[]>;
+  discoverTools: (sessionId: string) => Promise<ToolInfo[]>;
   executeToolCall: (
     sessionId: string,
     toolName: string,
@@ -15,6 +16,13 @@ export interface McpManager {
   ) => Promise<any>;
   registerServer: (serverConfig: ServerConfig) => Promise<void>;
   getAvailableServers: () => ServerConfig[];
+  getToolsWithCredentialRequirements: (sessionId: string) => ToolCredentialInfo[];
+  setToolCredentials: (
+    sessionId: string, 
+    toolName: string, 
+    serverId: string, 
+    credentials: Record<string, string>
+  ) => Promise<boolean>;
   cleanup: () => Promise<void>;
 }
 
@@ -57,7 +65,12 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
 
       // Register tools in our registry
       if (toolsResult?.tools) {
-        toolRegistry.registerTools(serverConfig.id, client, toolsResult.tools);
+        toolRegistry.registerTools(
+          serverConfig.id, 
+          serverConfig.name,
+          client, 
+          toolsResult.tools
+        );
       }
 
       // Store the connected client for later use
@@ -82,7 +95,7 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
   };
 
   // Discover all available tools for a session
-  const discoverTools = async (sessionId: string): Promise<Tool[]> => {
+  const discoverTools = async (sessionId: string): Promise<ToolInfo[]> => {
     return toolRegistry.getAllTools();
   };
 
@@ -97,13 +110,25 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
       throw new Error(`Tool ${toolName} not found`);
     }
 
-    const { client, tool } = toolInfo;
+    const { client, tool, serverId } = toolInfo;
 
     try {
+      // Get credentials for this tool if required
+      const credentials = sessionManager.getToolCredentials(
+        sessionId,
+        toolName,
+        serverId
+      );
+
+      // Add credentials to args if available
+      const argsWithCredentials = credentials 
+        ? { ...args, __credentials: credentials }
+        : args;
+
       // Execute the tool via MCP
       const result = await client.callTool({
         name: toolName,
-        arguments: args,
+        arguments: argsWithCredentials,
       });
 
       return result;
@@ -116,6 +141,32 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
   // Get all available server configurations
   const getAvailableServers = (): ServerConfig[] => {
     return [...servers];
+  };
+
+  // Get tools that require credentials
+  const getToolsWithCredentialRequirements = (sessionId: string): ToolCredentialInfo[] => {
+    return toolRegistry.getToolsWithCredentialRequirements();
+  };
+
+  // Set credentials for a tool
+  const setToolCredentials = async (
+    sessionId: string,
+    toolName: string,
+    serverId: string,
+    credentials: Record<string, string>
+  ): Promise<boolean> => {
+    try {
+      sessionManager.setToolCredentials(
+        sessionId,
+        toolName,
+        serverId,
+        credentials
+      );
+      return true;
+    } catch (error) {
+      console.error(`Error setting credentials for tool ${toolName}:`, error);
+      return false;
+    }
   };
 
   // Clean up connections when closing
@@ -137,6 +188,8 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
     executeToolCall,
     registerServer,
     getAvailableServers,
+    getToolsWithCredentialRequirements,
+    setToolCredentials,
     cleanup,
   };
 }
