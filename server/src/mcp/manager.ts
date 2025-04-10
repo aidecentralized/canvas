@@ -13,7 +13,7 @@ export interface McpManager {
     toolName: string,
     args: any
   ) => Promise<any>;
-  registerServer: (serverConfig: ServerConfig) => Promise<void>;
+  registerServer: (serverConfig: ServerConfig) => Promise<boolean>;
   getAvailableServers: () => ServerConfig[];
   cleanup: () => Promise<void>;
 }
@@ -37,9 +37,8 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
   // Cache of connected clients
   const connectedClients: Map<string, Client> = new Map();
 
-  const registerServer = async (serverConfig: ServerConfig): Promise<void> => {
-    servers.push(serverConfig);
 
+  const registerServer = async (serverConfig: ServerConfig): Promise<boolean> => {
     try {
       // Create MCP client for this server using SSE transport
       const sseUrl = new URL(serverConfig.url);
@@ -50,34 +49,45 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
         version: "1.0.0",
       });
 
-      await client.connect(transport);
+      await client.connect(transport); // This will throw if the server is unreachable
 
       // Fetch available tools from the server
       const toolsResult = await client.listTools();
 
-      // Register tools in our registry
-      if (toolsResult?.tools) {
-        toolRegistry.registerTools(serverConfig.id, client, toolsResult.tools);
+      // Ensure the server has tools
+      if (!toolsResult?.tools || toolsResult.tools.length === 0) {
+        throw new Error("No tools discovered on MCP server");
       }
+
+      // Register tools in our registry
+      toolRegistry.registerTools(serverConfig.id, client, toolsResult.tools);
 
       // Store the connected client for later use
       connectedClients.set(serverConfig.id, client);
+      servers.push(serverConfig);
 
       console.log(
         `Registered server ${serverConfig.name} with ${
-          toolsResult?.tools?.length || 0
+          toolsResult?.tools?.length
         } tools`
       );
+
+      // Successful Registration
+      return true;
     } catch (error) {
       console.error(
-        `Failed to connect to MCP server ${serverConfig.name}:`,
+        `Failed to register server ${serverConfig.name}:`,
         error
       );
-      // Remove the server from our list since we couldn't connect
+
+      // Clean up in-memory state
       const index = servers.findIndex((s) => s.id === serverConfig.id);
       if (index !== -1) {
         servers.splice(index, 1);
       }
+
+      // Failed registration
+      return false;
     }
   };
 
