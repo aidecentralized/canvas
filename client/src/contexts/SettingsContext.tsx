@@ -99,17 +99,6 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
             NANDA_SERVERS_STORAGE_KEY,
             JSON.stringify(newServers)
          );
-
-         // Also register with backend
-         // fetch(`${process.env.REACT_APP_API_BASE_URL}/api/servers`, {
-         //   method: "POST",
-         //   headers: {
-         //     "Content-Type": "application/json",
-         //   },
-         //   body: JSON.stringify(server),
-         // }).catch((error) => {
-         //   console.error("Failed to register server with backend:", error);
-         // });
          return newServers;
       });
    }, []);
@@ -146,17 +135,9 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
             //    );
          }
       }
-      if (nandaServers.length > 0) {
-
-         if (mcpManager.getAvailableServers().length > 0) {
-            registerAllServers();
-         }
+      if (nandaServers.length > 0 && mcpManager.getAvailableServers().length > 0) {
+         registerAllServers();
       };
-
-      // const loadServersFromLocalstorage = () => {
-      //    return localStorage.getItem(NANDA_SERVERS_STORAGE_KEY)
-      // }
-
    }, []);
 
    // Refresh servers from registry

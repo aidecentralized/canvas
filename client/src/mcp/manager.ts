@@ -1,5 +1,4 @@
 // server/src/mcp/manager.ts
-import { Server as SocketIoServer } from "socket.io";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
