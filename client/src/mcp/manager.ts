@@ -5,7 +5,7 @@ import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { ToolRegistry } from "./toolRegistry";
 
 export interface McpManager {
-   discoverTools: (sessionId: string) => Promise<Tool[]>;
+   discoverTools: () => Promise<Tool[]>;
    executeToolCall: (
       sessionId: string,
       toolName: string,
