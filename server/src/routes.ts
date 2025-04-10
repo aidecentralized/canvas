@@ -58,8 +58,8 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
 
       // Create completion request
       const completion = await anthropic.messages.create({
-        model: "claude-3-haiku-20240307",
-        max_tokens: 4000,
+        model: "claude-3-7-sonnet-20250219",
+        max_tokens: 10000,
         messages,
         tools: availableTools.length > 0 ? availableTools : undefined,
       });
@@ -134,8 +134,8 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
 
         // Get a new completion with all the tool results
         finalResponse = await anthropic.messages.create({
-          model: "claude-3-5-sonnet-20241022",
-          max_tokens: 4000,
+          model: "claude-3-7-sonnet-20250219",
+          max_tokens: 10000,
           messages: finalMessages,
         });
       }
@@ -214,5 +214,23 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
   app.get("/api/servers", (req: Request, res: Response) => {
     const servers = mcpManager.getAvailableServers();
     res.json({ servers });
+  });
+
+  // Registry refresh endpoint
+  app.post("/api/registry/refresh", async (req: Request, res: Response) => {
+    try {
+      const registryServers = await mcpManager.fetchRegistryServers();
+      res.json({
+        success: true,
+        servers: registryServers,
+      });
+    } catch (error) {
+      console.error("Error refreshing servers from registry:", error);
+      res.status(500).json({
+        error:
+          error.message ||
+          "An error occurred while refreshing registry servers",
+      });
+    }
   });
 }

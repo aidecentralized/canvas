@@ -11,6 +11,11 @@ interface ServerConfig {
   id: string;
   name: string;
   url: string;
+  description?: string;
+  types?: string[];
+  tags?: string[];
+  verified?: boolean;
+  rating?: number;
 }
 
 interface SettingsContextProps {

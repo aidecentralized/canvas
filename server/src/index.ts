@@ -10,6 +10,10 @@ import { setupMcpManager } from "./mcp/manager.js";
 // Load environment variables
 config();
 
+// Registry settings
+const REGISTRY_URL = "https://nanda-registry.com";
+const REGISTRY_API_KEY = process.env.REGISTRY_API_KEY;
+
 // Create Express app
 const app = express();
 const server = http.createServer(app);
@@ -35,8 +39,23 @@ const io = new SocketIoServer(server, {
   },
 });
 
-// Initialize MCP Manager
-const mcpManager = setupMcpManager(io);
+// Initialize MCP Manager with registry URL
+const mcpManager = setupMcpManager(io, REGISTRY_URL, REGISTRY_API_KEY);
+
+// Setup routes
+setupRoutes(app, mcpManager);
+
+// Load servers from registry on startup
+(async () => {
+  try {
+    // console.log("Fetching servers from registry...");
+    const registryServers = await mcpManager.fetchRegistryServers();
+    console.log(`Loaded ${registryServers.length} servers from registry`);
+    // console.warn("Registry URL is not set. Skipping server loading.");
+  } catch (error) {
+    console.error("Error loading servers from registry:", error);
+  }
+})();
 
 // Handle graceful shutdown
 process.on("SIGTERM", async () => {
