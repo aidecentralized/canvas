@@ -5,6 +5,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { ToolRegistry } from "./toolRegistry.js";
 import { SessionManager } from "./sessionManager.js";
+import { RegistryClient } from "../registry/client.js";
 
 export interface McpManager {
   discoverTools: (sessionId: string) => Promise<Tool[]>;
@@ -14,6 +15,7 @@ export interface McpManager {
     args: any
   ) => Promise<any>;
   registerServer: (serverConfig: ServerConfig) => Promise<void>;
+  fetchRegistryServers: () => Promise<ServerConfig[]>;
   getAvailableServers: () => ServerConfig[];
   cleanup: () => Promise<void>;
 }
@@ -22,9 +24,18 @@ export interface ServerConfig {
   id: string;
   name: string;
   url: string;
+  description?: string;
+  types?: string[];
+  tags?: string[];
+  verified?: boolean;
+  rating?: number;
 }
 
-export function setupMcpManager(io: SocketIoServer): McpManager {
+export function setupMcpManager(
+  io: SocketIoServer,
+  registryUrl?: string,
+  registryApiKey?: string
+): McpManager {
   // Registry to keep track of available MCP tools
   const toolRegistry = new ToolRegistry();
 
@@ -37,8 +48,108 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
   // Cache of connected clients
   const connectedClients: Map<string, Client> = new Map();
 
+  // Registry client if URL is provided
+  const registryClient = registryUrl
+    ? new RegistryClient({
+        url: registryUrl,
+        apiKey: registryApiKey,
+      })
+    : null;
+
+  // Fetch servers from registry
+  // In the fetchRegistryServers function
+  const fetchRegistryServers = async (): Promise<ServerConfig[]> => {
+    if (!registryClient) {
+      return [];
+    }
+
+    try {
+      const registryServers = await registryClient.getServers();
+
+      // Register all discovered servers
+      for (const serverConfig of registryServers) {
+        // Check if server is already registered by ID or URL
+        const existingServerWithSameUrl = servers.find(
+          (s) => s.url === serverConfig.url
+        );
+
+        if (existingServerWithSameUrl) {
+          // Server with same URL exists, update it with new metadata but keep track
+          console.log(
+            `Server with URL ${serverConfig.url} already exists with ID ${existingServerWithSameUrl.id}, updating metadata`
+          );
+
+          // Update the existing server entry with new metadata
+          Object.assign(existingServerWithSameUrl, {
+            ...serverConfig,
+            id: existingServerWithSameUrl.id, // Keep the original ID
+          });
+        } else if (!servers.some((s) => s.id === serverConfig.id)) {
+          // This is a completely new server, register it
+          try {
+            await registerServer(serverConfig);
+          } catch (error) {
+            console.error(
+              `Failed to register server ${serverConfig.name} from registry:`,
+              error
+            );
+          }
+        }
+      }
+
+      return registryServers;
+    } catch (error) {
+      console.error("Error fetching servers from registry:", error);
+      return [];
+    }
+  };
+
+  // In the registerServer function
   const registerServer = async (serverConfig: ServerConfig): Promise<void> => {
-    servers.push(serverConfig);
+    // Check if server with same URL already exists
+    const existingUrlIndex = servers.findIndex(
+      (s) => s.url === serverConfig.url
+    );
+
+    if (existingUrlIndex !== -1) {
+      // A server with this URL already exists, update it
+      const existingId = servers[existingUrlIndex].id;
+      console.log(
+        `Updating server with URL ${serverConfig.url} (existing ID: ${existingId}, new ID: ${serverConfig.id})`
+      );
+
+      // Clean up old client connection if IDs differ
+      if (existingId !== serverConfig.id && connectedClients.has(existingId)) {
+        const oldClient = connectedClients.get(existingId);
+        try {
+          await oldClient?.close();
+        } catch (error) {
+          console.error(
+            `Error closing old client connection for ${existingId}:`,
+            error
+          );
+        }
+        connectedClients.delete(existingId);
+
+        // Remove tools from the old server
+        toolRegistry.removeToolsByServerId(existingId);
+      }
+
+      // Update the server entry
+      servers[existingUrlIndex] = serverConfig;
+    } else {
+      // Check if ID already exists
+      const existingIdIndex = servers.findIndex(
+        (s) => s.id === serverConfig.id
+      );
+      if (existingIdIndex !== -1) {
+        // Update existing server with same ID
+        servers[existingIdIndex] = serverConfig;
+      } else {
+        // Add new server
+        servers.push(serverConfig);
+      }
+    }
 
     try {
       // Create MCP client for this server using SSE transport
@@ -78,6 +189,7 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
       if (index !== -1) {
         servers.splice(index, 1);
       }
+      throw error;
     }
   };
 
@@ -136,6 +248,7 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
     discoverTools,
     executeToolCall,
     registerServer,
+    fetchRegistryServers,
     getAvailableServers,
     cleanup,
   };

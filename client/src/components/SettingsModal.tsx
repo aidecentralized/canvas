@@ -29,8 +29,17 @@ import {
   IconButton,
   InputGroup,
   InputRightElement,
+  Spinner,
+  Badge,
 } from "@chakra-ui/react";
-import { FaEye, FaEyeSlash, FaPlus } from "react-icons/fa";
+import {
+  FaEye,
+  FaEyeSlash,
+  FaPlus,
+  FaSync,
+  FaCheck,
+  FaStar,
+} from "react-icons/fa";
 import { useSettingsContext } from "../contexts/SettingsContext";
 
 interface SettingsModalProps {
@@ -39,8 +48,13 @@ interface SettingsModalProps {
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
-  const { apiKey, setApiKey, nandaServers, registerNandaServer } =
-    useSettingsContext();
+  const {
+    apiKey,
+    setApiKey,
+    nandaServers,
+    registerNandaServer,
+    refreshRegistry,
+  } = useSettingsContext();
   const [tempApiKey, setTempApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [newServer, setNewServer] = useState({
@@ -48,6 +62,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     name: "",
     url: "",
   });
+  const [registryServers, setRegistryServers] = useState<any[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const toast = useToast();
 
   // Reset temp values when modal opens
@@ -127,6 +143,59 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     });
   };
 
+  const handleRefreshRegistry = async () => {
+    setIsRefreshing(true);
+    try {
+      const result = await refreshRegistry();
+      setRegistryServers(result.servers || []);
+
+      toast({
+        title: "Registry Refreshed",
+        description: `Found ${result.servers.length} servers from the registry`,
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    } catch (error) {
+      toast({
+        title: "Refresh Failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Failed to refresh registry servers",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleAddRegistryServer = (server: any) => {
+    registerNandaServer({
+      id: server.id,
+      name: server.name,
+      url: server.url,
+    });
+
+    toast({
+      title: "Server Added",
+      description: `Registry server "${server.name}" has been added`,
+      status: "success",
+      duration: 3000,
+      isClosable: true,
+      position: "top",
+    });
+  };
+
+  // Check if a registry server is already registered
+  const isServerRegistered = (serverId: string) => {
+    return nandaServers.some((server) => server.id === serverId);
+  };
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="xl">
       <ModalOverlay backdropFilter="blur(10px)" />
@@ -138,6 +207,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             <TabList>
               <Tab>API</Tab>
               <Tab>Nanda Servers</Tab>
+              <Tab>Registry</Tab>
               <Tab>About</Tab>
             </TabList>
 
@@ -276,6 +346,139 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                         Add Server
                       </Button>
                     </VStack>
+                  </Box>
+                </VStack>
+              </TabPanel>
+
+              {/* Registry Tab */}
+              <TabPanel>
+                <VStack spacing={4} align="stretch">
+                  <Box>
+                    <Flex
+                      justifyContent="space-between"
+                      alignItems="center"
+                      mb={4}
+                    >
+                      <Heading size="sm">MCP Registry Servers</Heading>
+                      <Button
+                        leftIcon={
+                          isRefreshing ? <Spinner size="sm" /> : <FaSync />
+                        }
+                        colorScheme="crimson"
+                        size="sm"
+                        onClick={handleRefreshRegistry}
+                        isLoading={isRefreshing}
+                      >
+                        Refresh Registry
+                      </Button>
+                    </Flex>
+
+                    {!isRefreshing && registryServers.length === 0 ? (
+                      <Text color="gray.400">
+                        No registry servers loaded. Click the refresh button to
+                        load servers from the registry.
+                      </Text>
+                    ) : (
+                      <>
+                        {isRefreshing ? (
+                          <Flex justifyContent="center" py={8}>
+                            <Spinner size="xl" color="crimson.400" />
+                          </Flex>
+                        ) : (
+                          registryServers.map((server) => (
+                            <Box
+                              key={server.id}
+                              p={3}
+                              mb={2}
+                              borderRadius="md"
+                              borderLeft="3px solid"
+                              borderLeftColor={
+                                server.verified ? "green.500" : "gray.500"
+                              }
+                              bg="rgba(0, 0, 0, 0.2)"
+                              position="relative"
+                            >
+                              <Flex
+                                justifyContent="space-between"
+                                alignItems="center"
+                              >
+                                <Text fontWeight="bold">
+                                  {server.name}
+                                  {server.verified && (
+                                    <Badge ml={2} colorScheme="green">
+                                      Verified
+                                    </Badge>
+                                  )}
+                                </Text>
+                                {server.rating && (
+                                  <Flex alignItems="center">
+                                    <FaStar color="gold" />
+                                    <Text ml={1} fontSize="sm">
+                                      {server.rating.toFixed(1)}
+                                    </Text>
+                                  </Flex>
+                                )}
+                              </Flex>
+
+                              <Text fontSize="sm" color="gray.400" mt={1}>
+                                ID: {server.id}
+                              </Text>
+                              <Text fontSize="sm" color="gray.400">
+                                URL: {server.url}
+                              </Text>
+
+                              {server.description && (
+                                <Text fontSize="sm" mt={1}>
+                                  {server.description}
+                                </Text>
+                              )}
+
+                              {server.tags && server.tags.length > 0 && (
+                                <Flex mt={2} flexWrap="wrap" gap={2}>
+                                  {server.tags.map(
+                                    (tag: string, index: number) => (
+                                      <Badge
+                                        key={index}
+                                        colorScheme="purple"
+                                        fontSize="xs"
+                                      >
+                                        {tag}
+                                      </Badge>
+                                    )
+                                  )}
+                                </Flex>
+                              )}
+
+                              <Flex mt={2} justifyContent="flex-end">
+                                <Button
+                                  size="xs"
+                                  colorScheme={
+                                    isServerRegistered(server.id)
+                                      ? "green"
+                                      : "crimson"
+                                  }
+                                  leftIcon={
+                                    isServerRegistered(server.id) ? (
+                                      <FaCheck />
+                                    ) : (
+                                      <FaPlus />
+                                    )
+                                  }
+                                  isDisabled={isServerRegistered(server.id)}
+                                  onClick={() =>
+                                    handleAddRegistryServer(server)
+                                  }
+                                >
+                                  {isServerRegistered(server.id)
+                                    ? "Added"
+                                    : "Add Server"}
+                                </Button>
+                              </Flex>
+                            </Box>
+                          ))
+                        )}
+                      </>
+                    )}
                   </Box>
                 </VStack>
               </TabPanel>
