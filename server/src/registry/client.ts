@@ -69,6 +69,10 @@ export class RegistryClient {
           if (url.endsWith("/")) {
             url = url.slice(0, -1);
           }
+          // remove sse if it is present in the url
+          if (url.endsWith("/sse")) {
+            url = url.slice(0, -4);
+          }
           return {
             id: server.id,
             name: server.name,

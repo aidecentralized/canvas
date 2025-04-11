@@ -103,7 +103,9 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
 
         // Send request to our backend
         const response = await fetch(
-          `${process.env.REACT_APP_API_BASE_URL}/api/chat/completions`,
+          `${
+            process.env.REACT_APP_API_BASE_URL || "http://localhost:3000"
+          }/api/chat/completions`,
           {
             method: "POST",
             headers: {
@@ -124,7 +126,6 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         }
 
         const responseData = await response.json();
-
         // Process the response to extract tool calls
         const { content, toolCalls } = processAssistantResponse(responseData);
 
