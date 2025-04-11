@@ -160,7 +160,9 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
   const refreshRegistry = useCallback(async () => {
     try {
       const response = await fetch(
-        `${process.env.REACT_APP_API_BASE_URL}/api/registry/refresh`,
+        `${
+          process.env.REACT_APP_API_BASE_URL ?? "http://localhost:3000"
+        }/api/registry/refresh`,
         {
           method: "POST",
           headers: {
