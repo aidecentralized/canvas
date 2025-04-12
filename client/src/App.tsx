@@ -21,8 +21,8 @@ function App() {
 
   return (
     <ChakraProvider theme={theme}>
-      <SettingsProvider>
-        <ChatProvider>
+      <ChatProvider>
+        <SettingsProvider>
           <Box
             minH="100vh"
             bgGradient="linear(to-b, crimson.800, crimson.900)"
@@ -46,8 +46,8 @@ function App() {
               onClose={handleCloseSettings}
             />
           </Box>
-        </ChatProvider>
-      </SettingsProvider>
+        </SettingsProvider>
+      </ChatProvider>
     </ChakraProvider>
   );
 }

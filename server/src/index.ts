@@ -6,6 +6,7 @@ import { Server as SocketIoServer } from "socket.io";
 import { config } from "dotenv";
 import { setupRoutes } from "./routes.js";
 import { setupMcpManager } from "./mcp/manager.js";
+import { SessionManager } from "./mcp/sessionManager.js"; // Import SessionManager
 
 // Load environment variables
 config();
@@ -23,6 +24,7 @@ app.use(
   cors({
     origin: process.env.CLIENT_URL || "http://localhost:3000",
     credentials: true,
+    exposedHeaders: ["X-Session-Id"], // Expose session ID header if needed by client
   })
 );
 
@@ -39,38 +41,25 @@ const io = new SocketIoServer(server, {
   },
 });
 
-// Initialize MCP Manager with registry URL
-const mcpManager = setupMcpManager(io, REGISTRY_URL, REGISTRY_API_KEY);
+// Instantiate Session Manager
+const sessionManager = new SessionManager();
 
-// Setup routes
-setupRoutes(app, mcpManager);
+// Initialize MCP Manager with SessionManager and registry URL
+const mcpManager = setupMcpManager(io, sessionManager, REGISTRY_URL, REGISTRY_API_KEY);
 
-// Load servers from registry on startup
-(async () => {
-  try {
-    // console.log("Fetching servers from registry...");
-    const registryServers = await mcpManager.fetchRegistryServers();
-    console.log(`Loaded ${registryServers.length} servers from registry`);
-    // console.warn("Registry URL is not set. Skipping server loading.");
-  } catch (error) {
-    console.error("Error loading servers from registry:", error);
-  }
-})();
+// Setup routes, passing both managers
+setupRoutes(app, mcpManager, sessionManager); // Pass sessionManager
 
 // Handle graceful shutdown
 process.on("SIGTERM", async () => {
   console.log("SIGTERM received, shutting down gracefully");
-  if (mcpManager.cleanup) {
-    await mcpManager.cleanup();
-  }
+  // Cleanup sessions (closes MCP clients)
+  await sessionManager.cleanupAllSessions();
   server.close(() => {
     console.log("Server closed");
     process.exit(0);
   });
 });
-
-// Setup routes
-setupRoutes(app, mcpManager);
 
 // Start the server
 const PORT = process.env.PORT || 4000;

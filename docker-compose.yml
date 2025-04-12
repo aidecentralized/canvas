@@ -24,12 +24,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.client
+      args: # Pass build arguments
+        REACT_APP_API_BASE_URL: ${API_BASE_URL} # Use variable from .env
     container_name: mcp-host-client
     restart: unless-stopped
     ports:
       - "3000:3000"
-    environment:
-      - REACT_APP_API_BASE_URL=${API_BASE_URL}
+    # Remove runtime environment variable, it's baked into the build now
+    # environment:
+    #   - REACT_APP_API_BASE_URL=${API_BASE_URL}
     depends_on:
       - server
     networks:

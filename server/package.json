@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "nodemon --exec ts-node src/index.ts",
+    "dev": "nodemon --exec tsx src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
@@ -28,6 +28,7 @@
     "@types/uuid": "^9.0.6",
     "nodemon": "^3.0.1",
     "ts-node": "^10.9.1",
+    "tsx": "^4.19.3",
     "typescript": "^5.2.2"
   },
   "engines": {

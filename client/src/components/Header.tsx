@@ -8,6 +8,7 @@ import {
   useColorMode,
   Icon,
   Tooltip,
+  useColorModeValue, // Import useColorModeValue
 } from "@chakra-ui/react";
 import { FaCog, FaMoon, FaSun } from "react-icons/fa";
 
@@ -17,6 +18,8 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ onOpenSettings }) => {
   const { colorMode, toggleColorMode } = useColorMode();
+  // Define explicit color for the toggle icon based on mode
+  const toggleIconColor = useColorModeValue("gray.600", "whiteAlpha.800");
 
   return (
     <Flex
@@ -51,7 +54,8 @@ const Header: React.FC<HeaderProps> = ({ onOpenSettings }) => {
             aria-label="Settings"
             icon={<FaCog />}
             variant="ghost"
-            colorScheme="whiteAlpha"
+            colorScheme="whiteAlpha" // Keep this for hover/focus styles if desired
+            color={toggleIconColor} // Explicitly set icon color
             fontSize="xl"
             mr={2}
             onClick={onOpenSettings}
@@ -70,7 +74,8 @@ const Header: React.FC<HeaderProps> = ({ onOpenSettings }) => {
             aria-label="Toggle color mode"
             icon={colorMode === "light" ? <FaMoon /> : <FaSun />}
             variant="ghost"
-            colorScheme="whiteAlpha"
+            colorScheme="whiteAlpha" // Keep this for hover/focus styles if desired
+            color={toggleIconColor} // Explicitly set icon color
             fontSize="xl"
             onClick={toggleColorMode}
           />

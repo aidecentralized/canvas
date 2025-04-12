@@ -27,6 +27,12 @@ interface CodeProps {
   children?: React.ReactNode;
 }
 
+// Define type for anchor props
+interface AnchorProps extends React.AnchorHTMLAttributes<HTMLAnchorElement> {
+  node?: any; // Keep node as any for simplicity, or use a more specific type from markdown AST if needed
+  children?: React.ReactNode;
+}
+
 const MessageContent: React.FC<MessageContentProps> = ({ content }) => {
   // If content is not an array, convert it to array for consistent handling
   const contentArray = Array.isArray(content) ? content : [content];
@@ -65,11 +71,11 @@ const MessageContent: React.FC<MessageContentProps> = ({ content }) => {
                   p({ children }) {
                     return <Text mb={2}>{children}</Text>;
                   },
-                  a({ node, children, ...props }) {
+                  a({ node, children, ...props }: AnchorProps) { // Add type AnchorProps
                     return (
                       <a
                         style={{ color: "#f06", textDecoration: "underline" }}
-                        {...props}
+                        {...props} // Spread remaining props (like href, target)
                       >
                         {children}
                       </a>
