@@ -2,7 +2,7 @@
 
 MCP Host is a complete end-to-end implementation of a Model Context Protocol (MCP) host with an in-built MCP client. It provides a polished chat interface with built-in tool selection via the Model Context Protocol (MCP).
 
-![MCP Host Screenshot](/path/to/screenshot.png)
+![MCP Host Screenshot](host_screenshot.png)
 
 ## Features
 
