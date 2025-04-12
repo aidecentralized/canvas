@@ -1,4 +1,5 @@
 // client/src/contexts/SettingsContext.tsx
+import { setupMcpManager } from "../mcp/manager";
 import React, {
   createContext,
   useContext,
@@ -27,12 +28,13 @@ interface SettingsContextProps {
   refreshRegistry: () => Promise<{ servers: ServerConfig[] }>;
 }
 
+export const mcpManager = setupMcpManager()
 const SettingsContext = createContext<SettingsContextProps>({
   apiKey: null,
-  setApiKey: () => {},
+  setApiKey: () => { },
   nandaServers: [],
-  registerNandaServer: () => {},
-  removeNandaServer: () => {},
+  registerNandaServer: () => { },
+  removeNandaServer: () => { },
   refreshRegistry: async () => ({ servers: [] }),
 });
 
@@ -93,6 +95,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
         newServers[existingIndex] = server;
       } else {
         // Add new server
+        mcpManager.registerServer(server);
         newServers = [...prevServers, server];
       }
 
@@ -101,18 +104,6 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
         NANDA_SERVERS_STORAGE_KEY,
         JSON.stringify(newServers)
       );
-
-      // Also register with backend
-      fetch(`${process.env.REACT_APP_API_BASE_URL}/api/servers`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(server),
-      }).catch((error) => {
-        console.error("Failed to register server with backend:", error);
-      });
-
       return newServers;
     });
   }, []);
@@ -129,61 +120,60 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
     });
   }, []);
 
-  // Register servers with backend on initial load
+  // Register servers with mcpmanager on initial load
   useEffect(() => {
-    if (nandaServers.length > 0) {
-      // Register all servers with the backend
-      const registerAllServers = async () => {
-        for (const server of nandaServers) {
-          try {
-            await fetch(`${process.env.REACT_APP_API_BASE_URL}/api/servers`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify(server),
-            });
-          } catch (error) {
-            console.error(
-              `Failed to register server ${server.id} with backend:`,
-              error
-            );
-          }
-        }
-      };
-
-      registerAllServers();
+    const registerAllServers = async () => {
+      for (const server of nandaServers) {
+        mcpManager.registerServer(server)
+        // try {
+        //    await fetch(`${process.env.REACT_APP_API_BASE_URL}/api/servers`, {
+        //       method: "POST",
+        //       headers: {
+        //          "Content-Type": "application/json",
+        //       },
+        //       body: JSON.stringify(server),
+        //    });
+        // } catch (error) {
+        //    console.error(
+        //       `Failed to register server ${server.id} with backend:`,
+        //       error
+        //    );
+      }
     }
+    if (nandaServers.length > 0 && mcpManager.getAvailableServers().length > 0) {
+      registerAllServers();
+    };
   }, []);
 
   // Refresh servers from registry
   const refreshRegistry = useCallback(async () => {
-    try {
-      const response = await fetch(
-        `${
-          process.env.REACT_APP_API_BASE_URL ?? "http://localhost:3000"
-        }/api/registry/refresh`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
+    // try {
+    //    const response = await fetch(
+    //       `${process.env.REACT_APP_API_BASE_URL}/api/registry/refresh`,
+    //       {
+    //          method: "POST",
+    //          headers: {
+    //             "Content-Type": "application/json",
+    //          },
+    //       }
+    //    );
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          errorData.error || "Failed to refresh servers from registry"
-        );
-      }
+    //    if (!response.ok) {
+    //       const errorData = await response.json();
+    //       throw new Error(
+    //          errorData.error || "Failed to refresh servers from registry"
+    //       );
+    //    }
 
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error("Error refreshing servers from registry:", error);
-      throw error;
-    }
+    //    const data = await response.json();
+    //    return data;
+    // } catch (error) {
+    //    console.error("Error refreshing servers from registry:", error);
+    //    throw error;
+    // }
+    // implment custom function for refreshRegistry
+
+    return { servers: mcpManager.getAvailableServers() }
   }, []);
 
   return (
