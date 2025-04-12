@@ -29,11 +29,13 @@ import {
   InputRightElement,
   useToast,
   UseToastOptions,
+  HStack,
 } from "@chakra-ui/react";
 import {
   FaEye,
   FaEyeSlash,
   FaPlus,
+  FaTrash,
 } from "react-icons/fa";
 import { useSettingsContext } from "../contexts/SettingsContext";
 
@@ -43,7 +45,7 @@ interface SettingsModalProps {
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
-  const { apiKey, setApiKey, nandaServers, registerNandaServer } =
+  const { apiKey, setApiKey, nandaServers, registerNandaServer, removeNandaServer } =
     useSettingsContext();
   const [tempApiKey, setTempApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
@@ -209,13 +211,25 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                           borderLeftColor="crimson.500"
                           bg="rgba(0, 0, 0, 0.2)"
                         >
-                          <Text fontWeight="bold">{server.name}</Text>
-                          <Text fontSize="sm" color="gray.400">
-                            ID: {server.id}
-                          </Text>
-                          <Text fontSize="sm" color="gray.400">
-                            URL: {server.url}
-                          </Text>
+                          <HStack justify="space-between" align="center">
+                            <Box>
+                              <Text fontWeight="bold">{server.name}</Text>
+                              <Text fontSize="sm" color="gray.400">
+                                ID: {server.id}
+                              </Text>
+                              <Text fontSize="sm" color="gray.400">
+                                URL: {server.url}
+                              </Text>
+                            </Box>
+                            <IconButton
+                              aria-label="Remove server"
+                              icon={<FaTrash />}
+                              colorScheme="red"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeNandaServer(server.id)}
+                            />
+                          </HStack>
                         </Box>
                       ))
                     )}

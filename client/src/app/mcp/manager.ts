@@ -12,6 +12,7 @@ export interface McpManager {
     args: any
   ) => Promise<any>;
   registerServer: (serverConfig: ServerConfig) => Promise<void>;
+  unregisterServer: (serverId: string) => Promise<void>;
   getAvailableServers: () => ServerConfig[];
   cleanup: () => Promise<void>;
 }
@@ -127,11 +128,36 @@ export function setupMcpManager(): McpManager {
     connectedClients.clear();
   };
 
+  // Unregister a server and clean up its resources
+  const unregisterServer = async (serverId: string): Promise<void> => {
+    // Remove server from the list
+    const index = servers.findIndex((s) => s.id === serverId);
+    if (index !== -1) {
+      servers.splice(index, 1);
+    }
+
+    // Close the client connection if it exists
+    const client = connectedClients.get(serverId);
+    if (client) {
+      try {
+        await client.close();
+        connectedClients.delete(serverId);
+        console.log(`Unregistered server ${serverId}`);
+      } catch (error) {
+        console.error(`Error unregistering server ${serverId}:`, error);
+      }
+    }
+
+    // Remove tools associated with this server
+    toolRegistry.removeToolsByServerId(serverId);
+  };
+
   // Return the MCP manager interface
   return {
     discoverTools,
     executeToolCall,
     registerServer,
+    unregisterServer,
     getAvailableServers,
     cleanup,
   };

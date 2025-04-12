@@ -117,6 +117,8 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
         NANDA_SERVERS_STORAGE_KEY,
         JSON.stringify(newServers)
       );
+      // Unregister server from mcpManager
+      mcpManager.unregisterServer(id);
       return newServers;
     });
   }, []);
