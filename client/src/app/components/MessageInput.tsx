@@ -1,6 +1,13 @@
 // client/src/components/MessageInput.tsx
-import React, { useState, useRef } from "react";
-import { Flex, Textarea, Button, Icon, useToast, Box } from "@chakra-ui/react";
+import React, { useState, useRef, useEffect } from "react";
+import {
+  Textarea,
+  Button,
+  VStack,
+  useToast,
+  Flex,
+  Icon,
+} from "@chakra-ui/react";
 import { FaPaperPlane, FaSpinner } from "react-icons/fa";
 import { useChatContext } from "../contexts/ChatContext";
 import { useSettingsContext } from "../contexts/SettingsContext";

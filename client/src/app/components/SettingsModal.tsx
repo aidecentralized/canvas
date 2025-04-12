@@ -1,3 +1,4 @@
+"use client"
 // client/src/components/SettingsModal.tsx
 import React, { useState, useEffect } from "react";
 import {
@@ -23,20 +24,16 @@ import {
   Heading,
   Text,
   Divider,
-  Flex,
-  Switch,
-  useToast,
   IconButton,
   InputGroup,
   InputRightElement,
+  useToast,
+  UseToastOptions,
 } from "@chakra-ui/react";
 import {
   FaEye,
   FaEyeSlash,
   FaPlus,
-  FaSync,
-  FaCheck,
-  FaStar,
 } from "react-icons/fa";
 import { useSettingsContext } from "../contexts/SettingsContext";
 
@@ -73,7 +70,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       duration: 3000,
       isClosable: true,
       position: "top",
-    });
+    } as UseToastOptions);
   };
 
   const toggleShowApiKey = () => {
@@ -90,14 +87,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         duration: 3000,
         isClosable: true,
         position: "top",
-      });
+      } as UseToastOptions);
       return;
     }
 
     // Validate URL
     try {
       new URL(newServer.url);
-    } catch (error) {
+    } catch (_error) {
       toast({
         title: "Invalid URL",
         description:
@@ -106,7 +103,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         duration: 3000,
         isClosable: true,
         position: "top",
-      });
+      } as UseToastOptions);
       return;
     }
 
@@ -131,7 +128,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       duration: 3000,
       isClosable: true,
       position: "top",
-    });
+    } as UseToastOptions);
   };
 
   return (
@@ -165,9 +162,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                       />
                       <InputRightElement>
                         <IconButton
-                          aria-label={
-                            showApiKey ? "Hide API Key" : "Show API Key"
-                          }
+                          aria-label={showApiKey ? "Hide API Key" : "Show API Key"}
                           icon={showApiKey ? <FaEyeSlash /> : <FaEye />}
                           size="sm"
                           variant="ghost"
@@ -241,8 +236,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                           onChange={(e) =>
                             setNewServer({ ...newServer, id: e.target.value })
                           }
-                          color={"black"}
-                          placeholder="weather"
+                          placeholder="e.g., nanda-server-1"
                         />
                         <FormHelperText>
                           A unique identifier for this server
@@ -256,8 +250,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                           onChange={(e) =>
                             setNewServer({ ...newServer, name: e.target.value })
                           }
-                          color={"black"}
-                          placeholder="Weather Server"
+                          placeholder="e.g., Local Development Server"
                         />
                         <FormHelperText>
                           A friendly name for this server
@@ -271,11 +264,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                           onChange={(e) =>
                             setNewServer({ ...newServer, url: e.target.value })
                           }
-                          color={"black"}
-                          placeholder="http://localhost:3001/sse"
+                          placeholder="e.g., http://localhost:3001/sse"
                         />
                         <FormHelperText>
-                          The SSE endpoint URL of the Nanda server
+                          The SSE endpoint URL for this server
                         </FormHelperText>
                       </FormControl>
 
@@ -324,9 +316,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         </ModalBody>
 
         <ModalFooter>
-          <Button variant="ghost" onClick={onClose}>
-            Close
-          </Button>
+          <Button variant="ghost" onClick={onClose}>Close</Button>
         </ModalFooter>
       </ModalContent>
     </Modal>

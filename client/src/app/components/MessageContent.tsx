@@ -1,18 +1,19 @@
+"use client"
 // client/src/components/MessageContent.tsx
 import React from "react";
 import { Box, Text, Image, Flex, Icon } from "@chakra-ui/react";
 import { FaInfoCircle, FaTools } from "react-icons/fa";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { atomDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 interface ContentItem {
   type: string;
   text?: string;
   id?: string;
   name?: string;
-  input?: any;
-  data?: string; // Added data property for image content type
+  input?: Record<string, unknown>;
+  data?: string;
 }
 
 interface MessageContentProps {
@@ -21,10 +22,11 @@ interface MessageContentProps {
 
 // Define types for ReactMarkdown components
 interface CodeProps {
-  node?: any;
+  node?: unknown;
   inline?: boolean;
   className?: string;
   children?: React.ReactNode;
+  [key: string]: unknown;
 }
 
 const MessageContent: React.FC<MessageContentProps> = ({ content }) => {
@@ -49,7 +51,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ content }) => {
                     const match = /language-(\w+)/.exec(className || "");
                     return !inline && match ? (
                       <SyntaxHighlighter
-                        style={atomDark}
+                        style={vscDarkPlus}
                         language={match[1]}
                         PreTag="div"
                         {...props}

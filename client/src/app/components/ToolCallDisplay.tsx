@@ -14,23 +14,35 @@ import {
 } from "@chakra-ui/react";
 import { FaTools, FaCheck, FaExclamationTriangle } from "react-icons/fa";
 
-interface ToolCallProps {
-  toolCall: {
-    id: string;
-    name: string;
-    input: any;
-    result?: {
-      content: any[];
-      isError?: boolean;
-    };
+interface ToolCall {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+  result?: {
+    content: Array<Record<string, unknown>>;
+    isError?: boolean;
   };
 }
 
-const ToolCallDisplay: React.FC<ToolCallProps> = ({ toolCall }) => {
+interface ToolCallDisplayProps {
+  toolCall: ToolCall;
+}
+
+const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({ toolCall }) => {
   const { name, input, result } = toolCall;
 
   const hasResult = !!result;
   const isError = result?.isError || false;
+
+  const renderContent = (content: Array<Record<string, unknown>>): React.ReactNode[] => {
+    return content.map((item: Record<string, unknown>, idx: number) => {
+      return (
+        <Text key={idx}>
+          {item.type === "text" ? item.text : JSON.stringify(item)}
+        </Text>
+      );
+    });
+  };
 
   return (
     <Box
@@ -112,11 +124,7 @@ const ToolCallDisplay: React.FC<ToolCallProps> = ({ toolCall }) => {
                   borderLeft="2px solid"
                   borderLeftColor={isError ? "red.500" : "green.400"}
                 >
-                  {result.content.map((item, idx) => (
-                    <Text key={idx}>
-                      {item.type === "text" ? item.text : JSON.stringify(item)}
-                    </Text>
-                  ))}
+                  {renderContent(result.content)}
                 </Box>
               </Box>
             )}

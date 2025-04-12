@@ -1,5 +1,11 @@
 // client/src/theme.ts
-import { extendTheme } from "@chakra-ui/react";
+import { extendTheme, type ThemeConfig } from "@chakra-ui/react";
+
+// Define the theme configuration
+const config: ThemeConfig = {
+  initialColorMode: "dark",
+  useSystemColorMode: false,
+};
 
 // Define the crimson color palette
 const colors = {
@@ -36,7 +42,8 @@ const glassmorphism = {
 };
 
 // Custom theme definition
-export const theme = extendTheme({
+const theme = extendTheme({
+  config,
   colors,
   styles: {
     global: {
@@ -136,3 +143,5 @@ export const theme = extendTheme({
   // Custom glassmorphism styles that can be accessed globally
   glassmorphism,
 });
+
+export default theme;

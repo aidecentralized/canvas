@@ -1,3 +1,4 @@
+"use client"
 // client/src/components/ChatInterface.tsx
 import React, { useRef, useEffect } from "react";
 import {
@@ -106,6 +107,12 @@ const ChatInterface: React.FC = () => {
                 "What tools do you have available?"
               </Button>
             </Box>
+            <Text fontSize="sm" color="gray.400">
+              Type a message to start chatting. You can use markdown, code blocks, and more!
+            </Text>
+            <Text fontSize="sm" color="gray.400">
+              Try asking about the weather or requesting an image generation.
+            </Text>
           </Flex>
         ) : (
           messages.map((message, index) => (
@@ -121,8 +128,8 @@ const ChatInterface: React.FC = () => {
               borderRadius="lg"
               borderTopRightRadius={message.role === "user" ? "0" : "lg"}
               borderTopLeftRadius={message.role === "user" ? "lg" : "0"}
-              // wordBreak="break-word" // Ensures text wraps within the box
-              // boxShadow="md" // Adds a subtle shadow for better visibility
+            // wordBreak="break-word" // Ensures text wraps within the box
+            // boxShadow="md" // Adds a subtle shadow for better visibility
             >
               <Flex align="center" mb={2}>
                 <Icon

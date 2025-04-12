@@ -1,7 +1,8 @@
+"use client"
 // client/src/App.tsx
 import React, { useState } from "react";
 import { ChakraProvider, Box, Flex } from "@chakra-ui/react";
-import { theme } from "./theme";
+import theme from "./theme";
 import { ChatProvider } from "./contexts/ChatContext";
 import { SettingsProvider } from "./contexts/SettingsContext";
 import ChatInterface from "./components/ChatInterface";
