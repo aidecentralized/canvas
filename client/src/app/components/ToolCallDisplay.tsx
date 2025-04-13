@@ -1,3 +1,4 @@
+"use client"
 // client/src/components/ToolCallDisplay.tsx
 import React from "react";
 import {

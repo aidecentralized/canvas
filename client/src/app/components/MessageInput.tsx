@@ -1,9 +1,8 @@
 // client/src/components/MessageInput.tsx
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import {
   Textarea,
   Button,
-  VStack,
   useToast,
   Flex,
   Icon,

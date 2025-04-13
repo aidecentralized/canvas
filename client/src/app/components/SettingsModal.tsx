@@ -96,7 +96,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     // Validate URL
     try {
       new URL(newServer.url);
-    } catch (_error) {
+    } catch {
       toast({
         title: "Invalid URL",
         description:

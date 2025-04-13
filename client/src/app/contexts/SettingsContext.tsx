@@ -124,31 +124,31 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
   }, []);
 
   // Register servers with backend on initial load
-  useEffect(() => {
-    if (nandaServers.length > 0) {
-      // Register all servers with the backend
-      const registerAllServers = async () => {
-        for (const server of nandaServers) {
-          try {
-            await fetch(`${process.env.REACT_APP_API_BASE_URL}/api/servers`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify(server),
-            });
-          } catch (error) {
-            console.error(
-              `Failed to register server ${server.id} with backend:`,
-              error
-            );
-          }
-        }
-      };
+  // useEffect(() => {
+  //   if (nandaServers.length > 0) {
+  //     // Register all servers with the backend
+  //     const registerAllServers = async () => {
+  //       for (const server of nandaServers) {
+  //         try {
+  //           await fetch(`${process.env.REACT_APP_API_BASE_URL}/api/servers`, {
+  //             method: "POST",
+  //             headers: {
+  //               "Content-Type": "application/json",
+  //             },
+  //             body: JSON.stringify(server),
+  //           });
+  //         } catch (error) {
+  //           console.error(
+  //             `Failed to register server ${server.id} with backend:`,
+  //             error
+  //           );
+  //         }
+  //       }
+  //     };
 
-      registerAllServers();
-    }
-  }, [nandaServers]);
+  //     registerAllServers();
+  //   }
+  // }, [nandaServers]);
 
   // Refresh servers from registry
   const refreshRegistry = useCallback(async () => {

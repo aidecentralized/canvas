@@ -5,7 +5,6 @@ import React, {
   useContext,
   useState,
   useCallback,
-  useRef,
 } from "react";
 import { mcpManager, useSettingsContext } from "./SettingsContext";
 import { v4 as uuidv4 } from "uuid";
@@ -57,9 +56,9 @@ export class Chat {
     })
   }
   async getAvailableTools() {
-    let availableTools = []
+    // const availableTools = []
     const discoveredTools = await mcpManager.discoverTools();
-    return availableTools = discoveredTools.map((tool) => ({
+    return discoveredTools.map((tool) => ({
       name: tool.name,
       description: tool.description || "",
       input_schema: tool.inputSchema
@@ -157,7 +156,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const { apiKey } = useSettingsContext();
-  const sessionId = useRef<string>(uuidv4());
+  // const sessionId = useRef<string>(uuidv4());
   // const chat = useRef(new Chat(""))
 
   // Process assistant response to extract tool calls

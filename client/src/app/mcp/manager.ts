@@ -1,3 +1,4 @@
+"use client"
 // server/src/mcp/manager.ts
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
@@ -94,7 +95,8 @@ export function setupMcpManager(): McpManager {
       throw new Error(`Tool ${toolName} not found`);
     }
 
-    const { client, tool } = toolInfo;
+    // const { client, tool } = toolInfo;
+    const { client } = toolInfo;
 
     try {
       // Execute the tool via MCP

@@ -89,7 +89,7 @@ const ChatInterface: React.FC = () => {
             </Text>
             <Text mb={4}>
               This AI uses the Nanda Protocol to enhance capabilities with
-              tools. Ask me anything, and I'll try to help by using my
+              tools. Ask me anything, and I&apos;ll try to help by using my
               intelligence and other tools and knowledge.
             </Text>
             <Box>
@@ -104,7 +104,7 @@ const ChatInterface: React.FC = () => {
                   // Enter message to ask about available tools
                 }}
               >
-                "What tools do you have available?"
+                &quot;What tools do you have available?&quot;
               </Button>
             </Box>
             <Text fontSize="sm" color="gray.400">
