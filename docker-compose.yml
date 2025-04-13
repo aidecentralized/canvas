@@ -28,7 +28,6 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
-    # Remove runtime environment variable, it's baked into the build now
     depends_on:
       - server
     networks:
