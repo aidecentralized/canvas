@@ -8,12 +8,15 @@
     "strict": false,
     "noImplicitAny": false,
     "skipLibCheck": true,
-    "outDir": "dist",
-    "rootDir": "src",
+    "outDir": "./dist",
+    "rootDir": ".",
     "declaration": true,
     "resolveJsonModule": true,
     "useUnknownInCatchVariables": false
   },
-  "include": ["src/**/*.ts"],
+  "include": [
+    "src/**/*.ts",
+    "../shared/**/*.ts" // Corrected path relative to tsconfig.json
+  ],
   "exclude": ["node_modules", "dist"]
 }

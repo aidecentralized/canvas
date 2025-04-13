@@ -1,4 +1,3 @@
-// client/src/components/ChatInterface.tsx
 import React, { useRef, useEffect } from "react";
 import {
   Box,
@@ -8,6 +7,7 @@ import {
   useTheme,
   Icon,
   Button,
+  useColorModeValue, // Import useColorModeValue
 } from "@chakra-ui/react";
 import { FaRobot, FaUser, FaTools } from "react-icons/fa";
 import { useChatContext } from "../contexts/ChatContext";
@@ -17,8 +17,21 @@ import ToolCallDisplay from "./ToolCallDisplay";
 
 const ChatInterface: React.FC = () => {
   const theme = useTheme();
-  const { messages, isLoading } = useChatContext();
+  const { messages, isLoading, setCurrentInputText } = useChatContext();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Define colors based on theme mode
+  const headerBg = useColorModeValue("rgba(255, 255, 255, 0.3)", "rgba(0, 0, 0, 0.2)");
+  const headerBorder = useColorModeValue("rgba(0, 0, 0, 0.1)", "rgba(255, 255, 255, 0.1)");
+  const assistantMsgBg = useColorModeValue("gray.100", "rgba(0, 0, 0, 0.3)");
+  const userMsgBg = useColorModeValue("crimson.500", "crimson.600"); // Adjusted for better light mode contrast
+  const inputAreaBg = useColorModeValue("rgba(255, 255, 255, 0.3)", "rgba(0, 0, 0, 0.2)");
+  const inputAreaBorder = useColorModeValue("rgba(0, 0, 0, 0.1)", "rgba(255, 255, 255, 0.1)");
+  const scrollbarTrackBg = useColorModeValue("rgba(0, 0, 0, 0.05)", "rgba(0, 0, 0, 0.1)");
+  const scrollbarThumbBg = useColorModeValue("rgba(0, 0, 0, 0.2)", "rgba(255, 255, 255, 0.2)");
+  const emptyChatColor = useColorModeValue("gray.600", "whiteAlpha.700");
+  const interfaceBg = useColorModeValue("rgba(255, 255, 255, 0.6)", "rgba(26, 32, 44, 0.7)"); // Use theme values
+  const interfaceBorder = useColorModeValue("rgba(0, 0, 0, 0.1)", "rgba(255, 255, 255, 0.18)"); // Use theme values
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -32,7 +45,9 @@ const ChatInterface: React.FC = () => {
       width="100%"
       maxWidth="1200px" // Increased max width for larger screens
       height="80vh" // Increased height to occupy more vertical space
-      {...theme.glassmorphism.card}
+      // Apply functional glassmorphism style from theme
+      sx={theme.glassmorphism.card({ colorMode: useColorModeValue('light', 'dark') })}
+      // Manual styling removed - prefer using theme via sx prop
       p={0}
       position="relative"
       overflow="hidden"
@@ -41,9 +56,10 @@ const ChatInterface: React.FC = () => {
     >
       {/* Chat header */}
       <Flex
-        bg="rgba(0, 0, 0, 0.2)"
+        bg={headerBg} // Use theme-aware value
         p={4}
-        borderBottom="1px solid rgba(255, 255, 255, 0.1)"
+        borderBottom="1px solid"
+        borderBottomColor={headerBorder} // Use theme-aware value
         align="center"
       >
         <Icon as={FaRobot} boxSize={5} mr={2} color="crimson.200" />
@@ -64,10 +80,10 @@ const ChatInterface: React.FC = () => {
             width: "4px",
           },
           "&::-webkit-scrollbar-track": {
-            background: "rgba(0, 0, 0, 0.1)",
+            background: scrollbarTrackBg, // Use theme-aware value
           },
           "&::-webkit-scrollbar-thumb": {
-            background: "rgba(255, 255, 255, 0.2)",
+            background: scrollbarThumbBg, // Use theme-aware value
             borderRadius: "2px",
           },
         }}
@@ -80,7 +96,7 @@ const ChatInterface: React.FC = () => {
             height="100%"
             px={8}
             textAlign="center"
-            color="whiteAlpha.700"
+            color={emptyChatColor} // Use theme-aware value
           >
             <Icon as={FaTools} boxSize={12} mb={4} color="crimson.300" />
             <Text fontSize="xl" fontWeight="bold" mb={2}>
@@ -97,10 +113,16 @@ const ChatInterface: React.FC = () => {
               </Text>
               <Button
                 size="sm"
-                variant="outline"
+                variant="outline" // Theme handles outline variant colors
                 mb={2}
                 onClick={() => {
-                  // Enter message to ask about available tools
+                  // Set the input text using the context setter
+                  setCurrentInputText("What tools do you have available?");
+                  // Focus on the textarea
+                  const textarea = document.querySelector('textarea');
+                  if (textarea) {
+                    textarea.focus();
+                  }
                 }}
               >
                 "What tools do you have available?"
@@ -113,11 +135,9 @@ const ChatInterface: React.FC = () => {
               key={index}
               alignSelf={message.role === "user" ? "flex-end" : "flex-start"}
               maxWidth="80%"
-              bg={
-                message.role === "user" ? "crimson.600" : "rgba(0, 0, 0, 0.3)"
-              }
-              color="white"
-              p={3}
+              bg={message.role === "user" ? userMsgBg : assistantMsgBg} // Use theme-aware values
+              color={message.role === "user" ? "white" : "inherit"} // Inherit color for assistant
+              p={6} 
               borderRadius="lg"
               borderTopRightRadius={message.role === "user" ? "0" : "lg"}
               borderTopLeftRadius={message.role === "user" ? "lg" : "0"}
@@ -159,9 +179,9 @@ const ChatInterface: React.FC = () => {
           <Box
             alignSelf="flex-start"
             maxWidth="80%"
-            bg="rgba(0, 0, 0, 0.3)"
-            color="white"
-            p={3}
+            bg={assistantMsgBg} // Use theme-aware value
+            color="inherit" // Inherit color
+            p={6} 
             borderRadius="lg"
             borderTopLeftRadius="0"
           >
@@ -180,8 +200,9 @@ const ChatInterface: React.FC = () => {
       {/* Input area */}
       <Box
         p={4}
-        borderTop="1px solid rgba(255, 255, 255, 0.1)"
-        bg="rgba(0, 0, 0, 0.2)"
+        borderTop="1px solid"
+        borderTopColor={inputAreaBorder} // Use theme-aware value
+        bg={inputAreaBg} // Use theme-aware value
       >
         <MessageInput />
       </Box>
