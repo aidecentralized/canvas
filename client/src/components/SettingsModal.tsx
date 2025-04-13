@@ -40,8 +40,16 @@ import {
   AlertIcon,
   AlertTitle,
   AlertDescription,
+  Badge,
+  HStack,
+  SimpleGrid,
+  Card,
+  CardHeader,
+  CardBody,
+  CardFooter,
+  InputLeftElement,
 } from "@chakra-ui/react";
-import { FaEye, FaEyeSlash, FaPlus, FaExternalLinkAlt, FaSync, FaTrash } from "react-icons/fa";
+import { FaEye, FaEyeSlash, FaPlus, FaExternalLinkAlt, FaSync, FaTrash, FaSearch } from "react-icons/fa";
 import { useSettingsContext } from "../contexts/SettingsContext";
 
 // Define the types locally instead of importing from a non-existent file
@@ -60,6 +68,18 @@ interface ToolCredentialInfo {
   serverName: string;
   serverId: string;
   credentials: CredentialRequirement[];
+}
+
+// Define the ServerConfig interface for registry servers
+interface ServerConfig {
+  id: string;
+  name: string;
+  url: string;
+  description?: string;
+  types?: string[];
+  tags?: string[];
+  verified?: boolean;
+  rating?: number;
 }
 
 interface SettingsModalProps {
@@ -226,15 +246,83 @@ const ToolCredentialForm: React.FC<ToolCredentialFormProps> = ({
   );
 };
 
+// New component for displaying a registry server card
+interface ServerCardProps {
+  server: ServerConfig;
+  onAdd: (server: ServerConfig) => void;
+  isAlreadyAdded: boolean;
+}
+
+const ServerCard: React.FC<ServerCardProps> = ({ server, onAdd, isAlreadyAdded }) => {
+  return (
+    <Card 
+      variant="outline" 
+      borderWidth="1px" 
+      borderColor="gray.700"
+      bg="rgba(0, 0, 0, 0.2)"
+      mb={4}
+    >
+      <CardHeader pb={2}>
+        <Flex justify="space-between" align="center">
+          <Heading size="sm" color="white">{server.name}</Heading>
+          {server.verified && (
+            <Badge colorScheme="green" variant="solid" fontSize="0.7em">
+              Verified
+            </Badge>
+          )}
+        </Flex>
+      </CardHeader>
+      
+      <CardBody pt={0} pb={2}>
+        <Text fontSize="sm" mb={2} color="gray.300">
+          {server.description || "No description provided"}
+        </Text>
+        
+        <HStack spacing={2} mb={2} wrap="wrap">
+          {server.types?.map((type: string, index: number) => (
+            <Badge key={`type-${index}`} colorScheme="blue" variant="subtle">
+              {type}
+            </Badge>
+          ))}
+          {server.tags?.map((tag: string, index: number) => (
+            <Badge key={`tag-${index}`} colorScheme="purple" variant="subtle">
+              {tag}
+            </Badge>
+          ))}
+        </HStack>
+        
+        {server.rating && (
+          <Text fontSize="sm" color="yellow.400">
+            Rating: {server.rating.toFixed(1)}/5.0
+          </Text>
+        )}
+      </CardBody>
+      
+      <CardFooter pt={1}>
+        <Button
+          size="sm"
+          colorScheme={isAlreadyAdded ? "gray" : "crimson"}
+          onClick={() => onAdd(server)}
+          isDisabled={isAlreadyAdded}
+          width="full"
+        >
+          {isAlreadyAdded ? "Already Added" : "Add Server"}
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+};
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const { 
     apiKey, 
     setApiKey, 
     nandaServers, 
     registerNandaServer,
+    removeNandaServer,
     getToolsWithCredentialRequirements,
     setToolCredentials,
-    removeNandaServer
+    refreshRegistry
   } = useSettingsContext();
   
   const [tempApiKey, setTempApiKey] = useState("");
@@ -249,6 +337,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [loadAttempts, setLoadAttempts] = useState(0);
   const retryTimerRef = useRef<NodeJS.Timeout | null>(null);
   const toast = useToast();
+  
+  // New state for registry servers
+  const [registryServers, setRegistryServers] = useState<ServerConfig[]>([]);
+  const [isLoadingRegistry, setIsLoadingRegistry] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Clear any existing timers on unmount
   useEffect(() => {
@@ -363,7 +456,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       status: "success",
       duration: 3000,
       isClosable: true,
-      position: "top",
     });
   };
 
@@ -380,7 +472,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         status: "error",
         duration: 3000,
         isClosable: true,
-        position: "top",
       });
       return;
     }
@@ -396,12 +487,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         status: "error",
         duration: 3000,
         isClosable: true,
-        position: "top",
       });
       return;
     }
 
-    // Register new server (will be saved to localStorage via context)
+    // Register new server
     registerNandaServer({
       id: newServer.id,
       name: newServer.name,
@@ -417,36 +507,102 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 
     toast({
       title: "Server Added",
-      description: `Server "${newServer.name}" has been added to your browser`,
+      description: `Server "${newServer.name}" has been added`,
       status: "success",
       duration: 3000,
       isClosable: true,
-      position: "top",
     });
-    
-    // Reload tools after adding a server
-    setTimeout(() => {
-      loadToolsWithCredentials();
-    }, 1000);
   };
-  
+
+  // Handle removing a server
   const handleRemoveServer = (serverId: string) => {
+    // Remove the server using the context function
     removeNandaServer(serverId);
     
+    // Show success message
     toast({
       title: "Server Removed",
-      description: "Server has been removed from your browser",
-      status: "info",
+      description: "The server has been removed successfully",
+      status: "success",
       duration: 3000,
       isClosable: true,
-      position: "top",
     });
     
-    // Reload tools after removing a server
-    setTimeout(() => {
-      loadToolsWithCredentials();
-    }, 1000);
+    // Optionally, refresh tools to update credentials UI
+    loadToolsWithCredentials();
   };
+
+  // Add a function to load registry servers
+  const loadRegistryServers = async () => {
+    setIsLoadingRegistry(true);
+    try {
+      const result = await refreshRegistry();
+      if (result && result.servers) {
+        setRegistryServers(result.servers);
+        toast({
+          title: "Registry servers loaded",
+          description: `Found ${result.servers.length} servers in the registry`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error loading registry servers",
+        description: error instanceof Error ? error.message : "Failed to load registry servers",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setIsLoadingRegistry(false);
+    }
+  };
+
+  // Check if a server is already added
+  const isServerAdded = (serverId: string) => {
+    return nandaServers.some(server => server.id === serverId);
+  };
+
+  // Add server from registry
+  const handleAddRegistryServer = (server: ServerConfig) => {
+    if (isServerAdded(server.id)) return;
+    
+    // Make sure the URL has /sse at the end if not already
+    let url = server.url;
+    if (!url.endsWith("/sse")) {
+      url = url.endsWith("/") ? `${url}sse` : `${url}/sse`;
+    }
+    
+    const serverToAdd = {
+      ...server,
+      url
+    };
+    
+    registerNandaServer(serverToAdd);
+    
+    toast({
+      title: "Server added",
+      description: `${server.name} has been added to your servers`,
+      status: "success",
+      duration: 3000,
+      isClosable: true,
+    });
+  };
+
+  // Filter registry servers based on search query
+  const filteredRegistryServers = registryServers.filter(server => {
+    if (!searchQuery) return true;
+    
+    const query = searchQuery.toLowerCase();
+    return (
+      server.name.toLowerCase().includes(query) ||
+      server.description?.toLowerCase().includes(query) ||
+      server.tags?.some((tag: string) => tag.toLowerCase().includes(query)) ||
+      server.types?.some((type: string) => type.toLowerCase().includes(query))
+    );
+  });
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="xl">
@@ -521,6 +677,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 _hover={{ color: "white" }}
               >
                 Tool Credentials
+              </Tab>
+              <Tab
+                _selected={{ 
+                  bg: "primary.500", 
+                  color: "white",
+                  fontWeight: "semibold",
+                  boxShadow: "0 4px 10px rgba(90, 26, 255, 0.3)",
+                }}
+                fontWeight="medium"
+                px={4}
+                py={2}
+                color="whiteAlpha.800"
+                _hover={{ color: "white" }}
+              >
+                Registry
               </Tab>
               <Tab
                 _selected={{ 
@@ -826,6 +997,96 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                         });
                       })()}
                     </>
+                  )}
+                </VStack>
+              </TabPanel>
+
+              {/* Registry Tab Panel */}
+              <TabPanel>
+                <VStack spacing={4} align="stretch">
+                  <Flex justify="space-between" align="center" mb={4}>
+                    <Heading size="sm">Global Nanda Registry</Heading>
+                    <Button
+                      leftIcon={<FaSync />}
+                      colorScheme="primary"
+                      size="sm"
+                      onClick={loadRegistryServers}
+                      isLoading={isLoadingRegistry}
+                    >
+                      Refresh Servers
+                    </Button>
+                  </Flex>
+                  
+                  <Text fontSize="sm" color="gray.400" mb={2}>
+                    Browse and add servers from the global Nanda Registry.
+                    Added servers will be stored locally in your browser.
+                  </Text>
+                  
+                  {/* Search input */}
+                  <InputGroup mb={4}>
+                    <InputLeftElement pointerEvents="none">
+                      <FaSearch color="gray.300" />
+                    </InputLeftElement>
+                    <Input
+                      placeholder="Search servers by name, description, tags..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                  </InputGroup>
+                  
+                  {isLoadingRegistry ? (
+                    <Center py={10}>
+                      <VStack spacing={4}>
+                        <Spinner
+                          thickness="4px"
+                          speed="0.65s"
+                          emptyColor="gray.700"
+                          color="primary.500"
+                          size="xl"
+                        />
+                        <Text color="gray.400">
+                          Loading servers from registry...
+                        </Text>
+                      </VStack>
+                    </Center>
+                  ) : registryServers.length === 0 ? (
+                    <Box textAlign="center" py={10}>
+                      <Text color="gray.400" mb={4}>
+                        No servers loaded from the registry yet.
+                      </Text>
+                      <Button
+                        colorScheme="primary"
+                        onClick={loadRegistryServers}
+                      >
+                        Load Registry Servers
+                      </Button>
+                    </Box>
+                  ) : filteredRegistryServers.length === 0 ? (
+                    <Alert
+                      status="info"
+                      variant="subtle"
+                      borderRadius="md"
+                      bg="rgba(0, 0, 0, 0.2)"
+                      borderWidth="1px"
+                      borderColor="blue.800"
+                    >
+                      <AlertIcon />
+                      <AlertTitle>No matches found</AlertTitle>
+                      <AlertDescription>
+                        No servers match your search query. Try a different search.
+                      </AlertDescription>
+                    </Alert>
+                  ) : (
+                    <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                      {filteredRegistryServers.map((server: ServerConfig) => (
+                        <ServerCard
+                          key={server.id}
+                          server={server}
+                          onAdd={handleAddRegistryServer}
+                          isAlreadyAdded={isServerAdded(server.id)}
+                        />
+                      ))}
+                    </SimpleGrid>
                   )}
                 </VStack>
               </TabPanel>
