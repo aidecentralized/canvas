@@ -28,7 +28,10 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
-    # Remove runtime environment variable, it's baked into the build now
+    # Runtime environment variables are not needed for the client service
+    # as REACT_APP_API_BASE_URL is baked in during the build stage (Dockerfile.client).
+    # environment:
+    #   - REACT_APP_API_BASE_URL=http://server:4000 # Example if needed at runtime, but not typical for CRA builds
     depends_on:
       - server
     networks:

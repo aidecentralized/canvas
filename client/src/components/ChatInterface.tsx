@@ -47,13 +47,7 @@ const ChatInterface: React.FC = () => {
       height="80vh" // Increased height to occupy more vertical space
       // Apply functional glassmorphism style from theme
       sx={theme.glassmorphism.card({ colorMode: useColorModeValue('light', 'dark') })}
-      // Or apply manually if sx prop isn't preferred
-      // bg={interfaceBg}
-      // borderColor={interfaceBorder}
-      // backdropFilter="blur(10px)"
-      // borderWidth="1px"
-      // borderRadius="10px"
-      // boxShadow="0 8px 32px 0 rgba(31, 38, 135, 0.37)"
+      // Manual styling removed - prefer using theme via sx prop
       p={0}
       position="relative"
       overflow="hidden"

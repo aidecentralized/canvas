@@ -7,7 +7,7 @@ import React, {
   useEffect, // Import useEffect
   useRef, // Import useRef
 } from "react";
-import { useSettingsContext } from "./SettingsContext";
+import { useSettingsContext } from "./SettingsContext"; // Keep this if needed elsewhere, but apiKey check is removed from sendMessage
 import { v4 as uuidv4 } from "uuid";
 
 export interface Message {
@@ -29,26 +29,32 @@ export interface Message {
 interface ChatContextProps {
   messages: Message[];
   isLoading: boolean;
-  currentInputText: string; // Renamed from inputMessage
-  setCurrentInputText: (text: string) => void; // Renamed from setInputMessage
+  currentInputText: string;
+  setCurrentInputText: (text: string) => void;
   sendMessage: (content: string) => Promise<void>;
   clearMessages: () => void;
-  sessionId: string | null; // Expose sessionId for potential debugging/use
-  clearSession: () => void; // Add clearSession function signature
+  /** The current session ID. Null if not yet initialized or cleared. */
+  sessionId: string | null; // Session ID can be null initially
+  /** Function to clear the current session ID from state and local storage. */
+  clearSession: () => void; // Function to clear session
 }
 
 const ChatContext = createContext<ChatContextProps>({
   messages: [],
   isLoading: false,
-  currentInputText: "", // Renamed from inputMessage
-  setCurrentInputText: () => {}, // Renamed from setInputMessage
+  currentInputText: "",
+  setCurrentInputText: () => {},
   sendMessage: async () => {},
   clearMessages: () => {},
-  sessionId: null, // Initialize sessionId as null
-  clearSession: () => {}, // Add clearSession to default context value
+  sessionId: null, // Default to null
+  clearSession: () => {}, // Default function
 });
 
 export const useChatContext = () => useContext(ChatContext);
+
+// Define API Base URL with a default for deployment
+const API_BASE_URL =
+  process.env.REACT_APP_API_BASE_URL ?? "http://localhost:4000"; // Default to server port
 
 interface ChatProviderProps {
   children: React.ReactNode;
@@ -59,78 +65,68 @@ const SESSION_ID_STORAGE_KEY = "sessionId"; // Define key for localStorage
 export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [currentInputText, setCurrentInputText] = useState(""); // Renamed state and setter
-  const { apiKey } = useSettingsContext();
-  // Use state for sessionId
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  // Ref to hold the latest messages state for use in sendMessage
-  const messagesRef = useRef<Message[]>(messages);
+  const [currentInputText, setCurrentInputText] = useState("");
+  const [sessionId, setSessionId] = useState<string | null>(null); // Session ID state
+  const messagesRef = useRef<Message[]>(messages); // Ref to hold current messages
 
-  // Keep the ref updated whenever messages change
+  // Update messagesRef whenever messages state changes
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
 
-  // Function to clear session state and storage
+  /**
+   * Clears the session ID from React state and browser's local storage.
+   * This typically happens if the backend indicates the session is invalid (e.g., 401 error).
+   * The user might need to refresh the page to get a new session.
+   */
   const clearSession = useCallback(() => {
-    console.error("Session invalid or expired. Clearing local session.");
-    localStorage.removeItem(SESSION_ID_STORAGE_KEY);
-    setSessionId(null); // Clear session state
-    // Optionally: Add a toast notification here to inform the user
+    console.warn("Clearing session ID from state and local storage.");
+    setSessionId(null); // Clear from state
+    localStorage.removeItem(SESSION_ID_STORAGE_KEY); // Clear from storage
+    // Consider adding a user notification here (e.g., via toast)
+    // Optionally clear messages: setMessages([]);
   }, []);
 
-  // Effect to fetch/create session ID on mount
+  /**
+   * Effect runs once on component mount to initialize the session ID.
+   * 1. Checks local storage for an existing session ID.
+   * 2. If found, uses it.
+   * 3. If not found, requests a new session ID from the backend's /api/session endpoint.
+   * 4. Stores the obtained session ID in both state and local storage.
+   */
   useEffect(() => {
     const initializeSession = async () => {
-      // Prevent re-initialization if sessionId is already set
-      if (sessionId) return;
-
-      let currentSessionId = localStorage.getItem(SESSION_ID_STORAGE_KEY);
-
-      if (!currentSessionId) {
-        console.log("No session ID found in localStorage, creating new session...");
+      const storedSessionId = localStorage.getItem(SESSION_ID_STORAGE_KEY);
+      if (storedSessionId) {
+        console.log("Found session ID in storage:", storedSessionId);
+        // Optional: Validate session ID with backend here if needed
+        setSessionId(storedSessionId);
+      } else {
+        console.log("No session ID in storage, requesting new one...");
         try {
-          const response = await fetch(
-            // Use relative path '/' as fallback, relying on Nginx proxy
-            `${process.env.REACT_APP_API_BASE_URL || ""}/api/session`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-            }
-          );
+          // Use relative path '/' as fallback, relying on Nginx proxy
+          const response = await fetch(`${API_BASE_URL}/api/session`, {
+            method: "POST",
+          });
           if (!response.ok) {
-            console.error("Failed to create session:", response.status, response.statusText); // Log error details
-            throw new Error(`Failed to create session: ${response.statusText}`);
+            throw new Error(`Failed to create session (${response.status})`);
           }
           const data = await response.json();
-          currentSessionId = data.sessionId;
-          if (currentSessionId) {
-            localStorage.setItem(SESSION_ID_STORAGE_KEY, currentSessionId);
-            console.log("New session created and stored:", currentSessionId);
+          if (data.sessionId) {
+            console.log("Received new session ID:", data.sessionId);
+            setSessionId(data.sessionId);
+            localStorage.setItem(SESSION_ID_STORAGE_KEY, data.sessionId);
           } else {
-            console.error("Server did not return a session ID."); // Log missing ID
-            // Handle error appropriately - maybe show a message to the user
-            // ...
+            throw new Error("No session ID received from server");
           }
         } catch (error) {
-          console.error("Error creating session:", error); // Log network or other errors
-          // Handle error appropriately
-          // ...
+          console.error("Error initializing session:", error);
+          // Handle error appropriately (e.g., show error message)
         }
-      } else {
-        console.log("Found session ID in localStorage:", currentSessionId); // Log existing ID
-      }
-
-      if (currentSessionId) {
-        setSessionId(currentSessionId);
-        console.log("Session ID set in context:", currentSessionId); // Confirm context update
       }
     };
-
     initializeSession();
-  }, [sessionId]); // Keep sessionId dependency to prevent re-running if already set
+  }, []); // Run only on mount
 
   // Process assistant response to extract tool calls
   const processAssistantResponse = useCallback((response: any) => {
@@ -155,7 +151,11 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     };
   }, []);
 
-  // Send a message to the assistant
+  /**
+   * Sends a user message to the backend chat completion endpoint.
+   * Includes the current session ID in the 'X-Session-Id' header.
+   * Handles responses, including potential tool calls and errors.
+   */
   const sendMessage = useCallback(
     async (messageText: string) => {
       // Use sessionId state directly
@@ -164,11 +164,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         // Optionally show a toast or handle this case in the UI component
         return;
       }
-      // Remove API key check here - it's now handled in MessageInput.tsx
-      // if (!apiKey) {
-      //   console.error("API key not set");
-      //   return;
-      // }
+      // API key check removed - handled server-side per session
       const trimmedMessage = messageText.trim();
       if (!trimmedMessage) {
         console.warn("Attempted to send an empty message.");
@@ -206,7 +202,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
 
         const response = await fetch(
           // Use relative path '/' as fallback, relying on Nginx proxy
-          `${process.env.REACT_APP_API_BASE_URL || ""}/api/chat/completions`,
+          `${API_BASE_URL}/api/chat/completions`,
           {
             method: "POST",
             headers: {
@@ -285,11 +281,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     setMessages([]);
   }, []);
 
-  // Render children immediately, but UI elements relying on sessionId should handle null state
-  // if (!sessionId) {
-  //     // Optionally return a loading indicator, but better to handle in consuming components
-  //     return <div>Loading session...</div>;
-  // }
+  // Render children immediately; components consuming sessionId should handle the null state.
 
   return (
     <ChatContext.Provider

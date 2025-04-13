@@ -16,7 +16,7 @@
   },
   "include": [
     "src/**/*.ts",
-    "shared/**/*.ts"
+    "../shared/**/*.ts" // Corrected path relative to tsconfig.json
   ],
   "exclude": ["node_modules", "dist"]
 }

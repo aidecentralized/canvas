@@ -12,8 +12,11 @@ import { SessionManager } from "./mcp/sessionManager.js"; // Import SessionManag
 config();
 
 // Registry settings
-const REGISTRY_URL = "https://nanda-registry.com";
+const REGISTRY_URL = process.env.REGISTRY_URL; // Allow override, can be undefined
 const REGISTRY_API_KEY = process.env.REGISTRY_API_KEY;
+
+// Client URL setting
+const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:3000"; // Default client URL
 
 // Create Express app
 const app = express();
@@ -22,9 +25,9 @@ const server = http.createServer(app);
 // Configure CORS
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    origin: CLIENT_URL, // Ensure this matches the deployed frontend URL
     credentials: true,
-    exposedHeaders: ["X-Session-Id"], // Expose session ID header if needed by client
+    exposedHeaders: ["X-Session-Id"], // Keep exposed if client needs to read it, otherwise optional
   })
 );
 
@@ -35,7 +38,7 @@ app.use(express.raw({ type: "application/octet-stream" }));
 // Setup Socket.IO
 const io = new SocketIoServer(server, {
   cors: {
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    origin: CLIENT_URL, // Ensure this matches the deployed frontend URL
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -44,7 +47,7 @@ const io = new SocketIoServer(server, {
 // Instantiate Session Manager
 const sessionManager = new SessionManager();
 
-// Initialize MCP Manager with SessionManager and registry URL
+// Initialize MCP Manager with SessionManager and registry URL/Key
 const mcpManager = setupMcpManager(io, sessionManager, REGISTRY_URL, REGISTRY_API_KEY);
 
 // Setup routes, passing both managers
@@ -65,4 +68,10 @@ process.on("SIGTERM", async () => {
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
+  if (REGISTRY_URL) {
+    console.log(`Using registry URL: ${REGISTRY_URL}`);
+  } else {
+    console.log(`Registry URL not configured.`);
+  }
+  console.log(`Accepting requests from client URL: ${CLIENT_URL}`);
 });

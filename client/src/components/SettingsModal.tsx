@@ -52,7 +52,7 @@ interface SettingsModalProps {
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const {
     apiKey,
-    setApiKey,
+    setApiKey, // Signature is now just setApiKey(key)
     nandaServers,
     registryServers,
     registerNandaServer,
@@ -88,19 +88,32 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }
   }, [isOpen, apiKey]);
 
-  const handleSaveApiKey = () => {
+  // Update handleSaveApiKey to call setApiKey without sessionId argument
+  const handleSaveApiKey = () => { // No longer needs async/await here unless setApiKey returns a promise you want to wait for
     if (!isSessionReady) {
       toast({ title: "Session Not Ready", status: "warning", duration: 3000 });
       return;
     }
-    setApiKey(tempApiKey);
-    toast({
-      title: "API Key Saved",
-      status: "success",
-      duration: 3000,
-      isClosable: true,
-      position: "top",
-    });
+    try {
+      setApiKey(tempApiKey); // Call context function (it handles session internally)
+      toast({
+        title: "API Key Saved",
+        description: "Key saved locally and sent to server for this session.", // Keep description
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    } catch (error) { // Catch potential synchronous errors if any, though unlikely now
+      toast({
+        title: "Failed to Initiate API Key Save", // Adjust title slightly
+        description: error instanceof Error ? error.message : "An unknown error occurred",
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+        position: "top",
+      });
+    }
   };
 
   const toggleShowApiKey = () => {
@@ -173,9 +186,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     setIsRefreshing(true);
     try {
       const result = await refreshRegistry();
-
-      // No need to set state here, it's handled in the context
-      // setRegistryServers(result.servers || []);
 
       toast({
         title: "Registry Refreshed",
