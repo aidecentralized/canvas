@@ -15,7 +15,7 @@ services:
       - PORT=4000
       - CLIENT_URL=http://localhost:3000
     volumes:
-      - ./server/logs:/app/logs
+      - ./server/logs:/app/server/logs
     networks:
       - mcp-network
 

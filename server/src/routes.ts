@@ -3,7 +3,8 @@ import { Express, Request, Response, NextFunction } from "express"; // Added Nex
 import Anthropic from "@anthropic-ai/sdk";
 import { McpManager, ServerConfig } from "./mcp/manager.js"; // Import ServerConfig here if needed, or from shared types
 import { SessionManager } from "./mcp/sessionManager.js";
-import { MessageContent } from "../shared/types.js"; // Corrected relative path to ../shared/
+// Revert to relative path - should work with rootDir set correctly
+import { MessageContent } from "../../shared/types.js";
 
 /**
  * Middleware factory function. Creates an Express middleware that:

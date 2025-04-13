@@ -8,15 +8,20 @@
     "strict": false,
     "noImplicitAny": false,
     "skipLibCheck": true,
-    "outDir": "./dist",
-    "rootDir": ".",
+    "outDir": "./dist", // Output relative to this tsconfig.json -> /app/server/dist
+    "rootDir": "..", // Root of source files relative to tsconfig.json -> /app
     "declaration": true,
     "resolveJsonModule": true,
     "useUnknownInCatchVariables": false
+    // Remove baseUrl and paths
+    // "baseUrl": "..",
+    // "paths": {
+    //   "@shared/*": ["shared/*"]
+    // }
   },
   "include": [
     "src/**/*.ts",
-    "../shared/**/*.ts" // Corrected path relative to tsconfig.json
+    "../shared/**/*.ts" // Path relative to tsconfig.json
   ],
   "exclude": ["node_modules", "dist"]
 }
