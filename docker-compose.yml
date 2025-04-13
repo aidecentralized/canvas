@@ -14,22 +14,27 @@ services:
       - NODE_ENV=production
       - PORT=4000
       - CLIENT_URL=http://localhost:3000
+      - CREDENTIAL_ENCRYPTION_KEY=1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
     volumes:
       - ./server/logs:/app/logs
     networks:
       - mcp-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # Frontend client
   client:
     build:
       context: .
       dockerfile: Dockerfile.client
+      args:
+        - REACT_APP_API_BASE_URL=http://localhost:4000
     container_name: mcp-host-client
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      - REACT_APP_API_BASE_URL=${API_BASE_URL}
+      - REACT_APP_API_BASE_URL=http://localhost:4000
     depends_on:
       - server
     networks:

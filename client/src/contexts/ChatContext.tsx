@@ -9,6 +9,9 @@ import React, {
 import { useSettingsContext } from "./SettingsContext";
 import { v4 as uuidv4 } from "uuid";
 
+// Fix for undefined environment variables
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "";
+
 export interface Message {
   id: string;
   role: "user" | "assistant";
@@ -49,10 +52,18 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const { apiKey } = useSettingsContext();
-  const sessionId = useRef<string>(uuidv4());
+  const settingsContext = useSettingsContext();
+  const fallbackSessionId = useRef<string>(uuidv4());
+  
+  // Get the session ID - use from settings context if available, fallback if not
+  const getSessionId = useCallback(() => {
+    return settingsContext.sessionId || fallbackSessionId.current;
+  }, [settingsContext.sessionId]);
 
   // Process assistant response to extract tool calls
   const processAssistantResponse = useCallback((response: any) => {
+    console.log("Raw response from API:", response);
+    
     const toolCalls = [];
 
     // Check for tool_use items in the content array
@@ -68,8 +79,15 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
       }
     }
 
+    // If the content isn't already an array, convert it to one
+    const processedContent = Array.isArray(response.content) 
+      ? response.content 
+      : [{ type: "text", text: typeof response.content === "string" 
+            ? response.content 
+            : "Response received in unexpected format" }];
+
     return {
-      content: response.content,
+      content: processedContent,
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     };
   }, []);
@@ -79,6 +97,18 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     async (messageText: string) => {
       if (!apiKey) {
         console.error("API key not set");
+        // Add error message about missing API key
+        const errorMessage: Message = {
+          id: uuidv4(),
+          role: "assistant",
+          content: {
+            type: "text",
+            text: "Error: Please set your Anthropic API key in the settings (gear icon) before sending messages."
+          },
+          timestamp: new Date(),
+        };
+        
+        setMessages((prevMessages) => [...prevMessages, errorMessage]);
         return;
       }
 
@@ -101,17 +131,17 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
           content: Array.isArray(msg.content) ? msg.content : [msg.content],
         }));
 
+        console.log(`Sending message to ${API_BASE_URL}/api/chat/completions with session ID: ${getSessionId()}`);
+        
         // Send request to our backend
         const response = await fetch(
-          `${
-            process.env.REACT_APP_API_BASE_URL || "http://localhost:3000"
-          }/api/chat/completions`,
+          `${API_BASE_URL}/api/chat/completions`,
           {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               "X-API-Key": apiKey,
-              "X-Session-Id": sessionId.current,
+              "X-Session-Id": getSessionId(),
             },
             body: JSON.stringify({
               messages: apiMessages,
@@ -120,12 +150,22 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
           }
         );
 
+        // Check the content type before trying to parse JSON
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          // Handle non-JSON response (like HTML error pages)
+          const text = await response.text();
+          console.error("Received non-JSON response:", text.substring(0, 200) + "...");
+          throw new Error(`Invalid response from server: Not JSON (${response.status} ${response.statusText})`);
+        }
+
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.error || "Failed to send message");
+          throw new Error(errorData.error || `Server error: ${response.status} ${response.statusText}`);
         }
 
         const responseData = await response.json();
+
         // Process the response to extract tool calls
         const { content, toolCalls } = processAssistantResponse(responseData);
 
@@ -162,7 +202,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         setIsLoading(false);
       }
     },
-    [apiKey, messages, processAssistantResponse]
+    [apiKey, messages, processAssistantResponse, getSessionId]
   );
 
   // Clear all messages

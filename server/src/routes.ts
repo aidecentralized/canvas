@@ -6,13 +6,22 @@ import { McpManager } from "./mcp/manager.js";
 export function setupRoutes(app: Express, mcpManager: McpManager): void {
   // Session endpoint
   app.post("/api/session", (req: Request, res: Response) => {
-    // We would use the session manager here to create a new session
-    // For simplicity, we're using a dummy session ID
-    res.json({ sessionId: "12345" });
+    console.log("API: /api/session called");
+    // Create a real session using sessionManager
+    const sessionManager = mcpManager.getSessionManager();
+    if (!sessionManager) {
+      console.error("Cannot create session: SessionManager not available");
+      return res.status(500).json({ error: "Session manager not available" });
+    }
+    
+    const sessionId = sessionManager.createSession();
+    console.log(`Created new session with ID: ${sessionId}`);
+    res.json({ sessionId });
   });
 
   // API key endpoint
   app.post("/api/settings/apikey", (req: Request, res: Response) => {
+    console.log("API: /api/settings/apikey called");
     const { apiKey } = req.body;
 
     if (!apiKey) {
@@ -24,10 +33,32 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
     res.json({ success: true });
   });
 
-  // Chat completion endpoint
+  // Helper function to ensure session exists
+  const ensureSession = (sessionId: string): string => {
+    if (!sessionId) {
+      console.log("No session ID provided, creating new session");
+      return mcpManager.getSessionManager().createSession();
+    }
+    
+    // Use getOrCreateSession to handle the session
+    mcpManager.getSessionManager().getOrCreateSession(sessionId);
+    return sessionId;
+  };
+
+  // Update the chat completion endpoint to ensure session
   app.post("/api/chat/completions", async (req: Request, res: Response) => {
+    console.log("API: /api/chat/completions called");
     const { messages, tools = true } = req.body;
     const apiKey = req.headers["x-api-key"] as string;
+    const rawSessionId = (req.headers["x-session-id"] as string) || "";
+    
+    // Ensure we have a valid session
+    const sessionId = ensureSession(rawSessionId);
+    
+    // If the session ID changed, let the client know
+    if (sessionId !== rawSessionId) {
+      console.log(`Using new session ID: ${sessionId} (original was: ${rawSessionId || "empty"})`);
+    }
 
     if (!apiKey) {
       return res.status(401).json({ error: "API key is required" });
@@ -42,7 +73,6 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
       let availableTools = [];
       if (tools) {
         try {
-          const sessionId = (req.headers["x-session-id"] as string) || "12345";
           const discoveredTools = await mcpManager.discoverTools(sessionId);
 
           availableTools = discoveredTools.map((tool) => ({
@@ -58,8 +88,8 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
 
       // Create completion request
       const completion = await anthropic.messages.create({
-        model: "claude-3-7-sonnet-20250219",
-        max_tokens: 10000,
+        model: "claude-3-5-sonnet-20241022",
+        max_tokens: 4000,
         messages,
         tools: availableTools.length > 0 ? availableTools : undefined,
       });
@@ -81,14 +111,16 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
         // Process each tool call
         for (const toolUse of toolUses) {
           try {
-            const sessionId =
-              (req.headers["x-session-id"] as string) || "12345";
+            console.log(`Executing tool call: ${toolUse.name} with input:`, JSON.stringify(toolUse.input));
+            
             const result = await mcpManager.executeToolCall(
               sessionId,
               toolUse.name,
               toolUse.input
             );
 
+            console.log(`Tool result for ${toolUse.name}:`, JSON.stringify(result.content));
+            
             // Add the tool result to the messages
             finalMessages.push({
               role: "user",
@@ -98,6 +130,7 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
                   tool_use_id: toolUse.id,
                   content: result.content.map((c: any) => {
                     if (c.type === "text") {
+                      console.log(`Tool ${toolUse.name} text response:`, c.text);
                       return {
                         type: "text",
                         text: c.text,
@@ -134,8 +167,8 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
 
         // Get a new completion with all the tool results
         finalResponse = await anthropic.messages.create({
-          model: "claude-3-7-sonnet-20250219",
-          max_tokens: 10000,
+          model: "claude-3-5-sonnet-20241022",
+          max_tokens: 4000,
           messages: finalMessages,
         });
       }
@@ -152,8 +185,10 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
 
   // Tool discovery endpoint
   app.get("/api/tools", async (req: Request, res: Response) => {
+    console.log("API: /api/tools called");
     try {
-      const sessionId = (req.headers["x-session-id"] as string) || "12345";
+      const rawSessionId = (req.headers["x-session-id"] as string) || "";
+      const sessionId = ensureSession(rawSessionId);
       const tools = await mcpManager.discoverTools(sessionId);
       res.json({ tools });
     } catch (error) {
@@ -166,12 +201,25 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
 
   // Tool execution endpoint
   app.post("/api/tools/execute", async (req: Request, res: Response) => {
+    console.log("API: /api/tools/execute called");
     const { toolName, args } = req.body;
-    const sessionId = (req.headers["x-session-id"] as string) || "12345";
+    const rawSessionId = (req.headers["x-session-id"] as string) || "";
+    const sessionId = ensureSession(rawSessionId);
 
     if (!toolName) {
       return res.status(400).json({ error: "Tool name is required" });
     }
+
+    // Add enhanced logging
+    console.log(`🛠️ Executing tool: ${toolName}`);
+    console.log(`📋 Session ID: ${sessionId}`);
+    console.log(`📝 Args: ${JSON.stringify(args, (key, value) => {
+      // Don't log credentials in full
+      if (key === "__credentials") {
+        return "[CREDENTIALS REDACTED]";
+      }
+      return value;
+    })}`);
 
     try {
       const result = await mcpManager.executeToolCall(
@@ -179,6 +227,8 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
         toolName,
         args || {}
       );
+      
+      console.log(`✅ Tool ${toolName} executed successfully`);
       res.json(result);
     } catch (error) {
       console.error(`Error executing tool ${toolName}:`, error);
@@ -188,8 +238,63 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
     }
   });
 
+  // Get tools that require credentials
+  app.get("/api/tools/credentials", (req: Request, res: Response) => {
+    console.log("API: /api/tools/credentials called with headers:", JSON.stringify(req.headers));
+    try {
+      const rawSessionId = (req.headers["x-session-id"] as string) || "";
+      const sessionId = ensureSession(rawSessionId);
+      console.log(`API: /api/tools/credentials using sessionId: ${sessionId}`);
+      const tools = mcpManager.getToolsWithCredentialRequirements(sessionId);
+      console.log(`API: /api/tools/credentials found ${tools.length} tools requiring credentials`);
+      res.json({ tools });
+    } catch (error) {
+      console.error("Error getting tools with credential requirements:", error);
+      res.status(500).json({
+        error: error.message || "An error occurred while fetching tools",
+      });
+    }
+  });
+
+  // Set credentials for a tool
+  app.post("/api/tools/credentials", async (req: Request, res: Response) => {
+    console.log("API: /api/tools/credentials POST called");
+    const { toolName, serverId, credentials } = req.body;
+    const rawSessionId = (req.headers["x-session-id"] as string) || "";
+    const sessionId = ensureSession(rawSessionId);
+
+    if (!toolName || !serverId || !credentials) {
+      return res.status(400).json({ 
+        error: "Missing required fields. toolName, serverId, and credentials are required" 
+      });
+    }
+
+    try {
+      const success = await mcpManager.setToolCredentials(
+        sessionId,
+        toolName,
+        serverId,
+        credentials
+      );
+
+      if (success) {
+        res.json({ success: true });
+      } else {
+        res.status(500).json({ 
+          error: "Failed to set credentials for the tool" 
+        });
+      }
+    } catch (error) {
+      console.error(`Error setting credentials for tool ${toolName}:`, error);
+      res.status(500).json({
+        error: error.message || "An error occurred while setting credentials",
+      });
+    }
+  });
+
   // Server registration endpoint
   app.post("/api/servers", async (req: Request, res: Response) => {
+    console.log("API: /api/servers POST called with body:", JSON.stringify(req.body));
     const { id, name, url } = req.body;
 
     if (!id || !name || !url) {
@@ -212,25 +317,8 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
 
   // Get available servers endpoint
   app.get("/api/servers", (req: Request, res: Response) => {
+    console.log("API: /api/servers GET called");
     const servers = mcpManager.getAvailableServers();
     res.json({ servers });
-  });
-
-  // Registry refresh endpoint
-  app.post("/api/registry/refresh", async (req: Request, res: Response) => {
-    try {
-      const registryServers = await mcpManager.fetchRegistryServers();
-      res.json({
-        success: true,
-        servers: registryServers,
-      });
-    } catch (error) {
-      console.error("Error refreshing servers from registry:", error);
-      res.status(500).json({
-        error:
-          error.message ||
-          "An error occurred while refreshing registry servers",
-      });
-    }
   });
 }

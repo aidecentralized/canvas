@@ -8,9 +8,12 @@ import {
   useTheme,
   Icon,
   Button,
+  Badge,
+  Tooltip,
 } from "@chakra-ui/react";
-import { FaRobot, FaUser, FaTools } from "react-icons/fa";
+import { FaRobot, FaUser, FaTools, FaRegLightbulb } from "react-icons/fa";
 import { useChatContext } from "../contexts/ChatContext";
+import { useSettingsContext } from "../contexts/SettingsContext";
 import MessageInput from "./MessageInput";
 import MessageContent from "./MessageContent";
 import ToolCallDisplay from "./ToolCallDisplay";
@@ -18,7 +21,13 @@ import ToolCallDisplay from "./ToolCallDisplay";
 const ChatInterface: React.FC = () => {
   const theme = useTheme();
   const { messages, isLoading } = useChatContext();
+  const settingsContext = useSettingsContext();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Log the session ID to help debug
+  useEffect(() => {
+    console.log("ChatInterface using session ID:", settingsContext.sessionId);
+  }, [settingsContext.sessionId]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -27,29 +36,57 @@ const ChatInterface: React.FC = () => {
     }
   }, [messages]);
 
+  const getMessageGradient = (isUser: boolean) => {
+    return isUser 
+      ? "linear-gradient(135deg, var(--chakra-colors-primary-500) 0%, var(--chakra-colors-primary-600) 100%)" 
+      : "linear-gradient(135deg, var(--chakra-colors-dark-200) 0%, var(--chakra-colors-dark-300) 100%)";
+  };
+
   return (
     <Box
       width="100%"
-      maxWidth="1200px" // Increased max width for larger screens
-      height="80vh" // Increased height to occupy more vertical space
+      maxWidth="1200px"
+      height="80vh"
       {...theme.glassmorphism.card}
       p={0}
       position="relative"
       overflow="hidden"
       display="flex"
       flexDirection="column"
+      boxShadow="0 10px 40px rgba(0, 0, 0, 0.3)"
     >
       {/* Chat header */}
       <Flex
-        bg="rgba(0, 0, 0, 0.2)"
+        bg="linear-gradient(90deg, var(--chakra-colors-dark-300) 0%, var(--chakra-colors-dark-400) 100%)"
         p={4}
-        borderBottom="1px solid rgba(255, 255, 255, 0.1)"
+        borderBottom="1px solid rgba(255, 255, 255, 0.08)"
         align="center"
+        justify="space-between"
       >
-        <Icon as={FaRobot} boxSize={5} mr={2} color="crimson.200" />
-        <Text fontWeight="bold" fontSize="lg">
-          Nanda Chat Interface
-        </Text>
+        <Flex align="center">
+          <Box 
+            bg="primary.500" 
+            borderRadius="lg" 
+            p={2} 
+            mr={3}
+            boxShadow="0 2px 10px rgba(90, 26, 255, 0.4)"
+          >
+            <Icon as={FaRobot} boxSize={5} color="white" />
+          </Box>
+          <Text fontWeight="bold" fontSize="lg">
+            Nanda Chat Interface <Text as="span" fontSize="xs" color="green.300">[v2]</Text>
+          </Text>
+          <Badge 
+            ml={3} 
+            colorScheme="purple" 
+            variant="subtle" 
+            borderRadius="full" 
+            px={2} 
+            fontSize="xs"
+          >
+            AI Powered
+          </Badge>
+        </Flex>
       </Flex>
 
       {/* Messages container */}
@@ -59,16 +96,21 @@ const ChatInterface: React.FC = () => {
         spacing={4}
         p={4}
         align="stretch"
+        bg="linear-gradient(135deg, var(--chakra-colors-dark-300) 0%, var(--chakra-colors-dark-400) 100%)"
         css={{
           "&::-webkit-scrollbar": {
-            width: "4px",
+            width: "6px",
           },
           "&::-webkit-scrollbar-track": {
             background: "rgba(0, 0, 0, 0.1)",
+            borderRadius: "3px",
           },
           "&::-webkit-scrollbar-thumb": {
-            background: "rgba(255, 255, 255, 0.2)",
-            borderRadius: "2px",
+            background: "rgba(255, 255, 255, 0.15)",
+            borderRadius: "3px",
+            "&:hover": {
+              background: "rgba(255, 255, 255, 0.25)",
+            },
           },
         }}
       >
@@ -80,32 +122,42 @@ const ChatInterface: React.FC = () => {
             height="100%"
             px={8}
             textAlign="center"
-            color="whiteAlpha.700"
+            color="whiteAlpha.800"
           >
-            <Icon as={FaTools} boxSize={12} mb={4} color="crimson.300" />
-            <Text fontSize="xl" fontWeight="bold" mb={2}>
+            <Box 
+              bg="rgba(90, 26, 255, 0.1)" 
+              p={5} 
+              borderRadius="full" 
+              mb={6}
+              boxShadow="0 5px 20px rgba(90, 26, 255, 0.2)"
+            >
+              <Icon as={FaTools} boxSize={10} color="primary.400" />
+            </Box>
+            <Text fontSize="2xl" fontWeight="bold" mb={3} bgGradient="linear(to-r, primary.300, secondary.300)" bgClip="text">
               Welcome to Nanda Chat Interface
             </Text>
-            <Text mb={4}>
+            <Text mb={6} maxW="md" lineHeight="tall">
               This AI uses the Nanda Protocol to enhance capabilities with
               tools. Ask me anything, and I'll try to help by using my
               intelligence and other tools and knowledge.
             </Text>
-            <Box>
-              <Text fontWeight="semibold" mb={2}>
-                Try asking:
+            <VStack spacing={2} align="stretch" maxW="sm">
+              <Text fontWeight="semibold" mb={1} display="flex" alignItems="center">
+                <Icon as={FaRegLightbulb} mr={2} color="secondary.300" /> Try asking:
               </Text>
               <Button
-                size="sm"
+                size="md"
                 variant="outline"
                 mb={2}
-                onClick={() => {
-                  // Enter message to ask about available tools
-                }}
+                borderColor="primary.400"
+                color="primary.300"
+                _hover={{ bg: "rgba(90, 26, 255, 0.1)" }}
+                borderRadius="full"
+                boxShadow="0 2px 5px rgba(0, 0, 0, 0.1)"
               >
                 "What tools do you have available?"
               </Button>
-            </Box>
+            </VStack>
           </Flex>
         ) : (
           messages.map((message, index) => (
@@ -113,27 +165,60 @@ const ChatInterface: React.FC = () => {
               key={index}
               alignSelf={message.role === "user" ? "flex-end" : "flex-start"}
               maxWidth="80%"
-              bg={
-                message.role === "user" ? "crimson.600" : "rgba(0, 0, 0, 0.3)"
-              }
+              bg={getMessageGradient(message.role === "user")}
               color="white"
-              p={3}
-              borderRadius="lg"
-              borderTopRightRadius={message.role === "user" ? "0" : "lg"}
-              borderTopLeftRadius={message.role === "user" ? "lg" : "0"}
-              // wordBreak="break-word" // Ensures text wraps within the box
-              // boxShadow="md" // Adds a subtle shadow for better visibility
+              p={4}
+              borderRadius="2xl"
+              borderTopRightRadius={message.role === "user" ? "0" : "2xl"}
+              borderTopLeftRadius={message.role === "user" ? "2xl" : "0"}
+              boxShadow="0 3px 10px rgba(0, 0, 0, 0.1)"
+              position="relative"
+              _after={message.role === "user" ? {
+                content: '""',
+                position: "absolute",
+                top: 0,
+                right: "-12px",
+                width: 0,
+                height: 0,
+                borderTop: "12px solid var(--chakra-colors-primary-500)",
+                borderRight: "12px solid transparent",
+              } : {
+                content: '""',
+                position: "absolute",
+                top: 0,
+                left: "-12px",
+                width: 0,
+                height: 0,
+                borderTop: "12px solid var(--chakra-colors-dark-200)",
+                borderLeft: "12px solid transparent",
+              }}
             >
               <Flex align="center" mb={2}>
-                <Icon
-                  as={message.role === "user" ? FaUser : FaRobot}
-                  boxSize={4}
-                  mr={2}
-                  color={message.role === "user" ? "white" : "crimson.200"}
-                />
+                <Tooltip 
+                  label={message.role === "user" ? "You" : "Assistant"} 
+                  placement="top" 
+                  hasArrow
+                >
+                  <Flex
+                    align="center"
+                    justify="center"
+                    bg={message.role === "user" ? "white" : "primary.500"}
+                    color={message.role === "user" ? "primary.500" : "white"}
+                    boxSize="24px"
+                    borderRadius="full"
+                    mr={2}
+                  >
+                    <Icon
+                      as={message.role === "user" ? FaUser : FaRobot}
+                      boxSize={3}
+                    />
+                  </Flex>
+                </Tooltip>
                 <Text fontWeight="bold" fontSize="sm">
-                  {" "}
                   {message.role === "user" ? "You" : "Assistant"}
+                </Text>
+                <Text ml={2} fontSize="xs" color={message.role === "user" ? "whiteAlpha.800" : "whiteAlpha.700"}>
+                  {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </Text>
               </Flex>
 
@@ -159,17 +244,76 @@ const ChatInterface: React.FC = () => {
           <Box
             alignSelf="flex-start"
             maxWidth="80%"
-            bg="rgba(0, 0, 0, 0.3)"
+            bg="linear-gradient(135deg, var(--chakra-colors-dark-200) 0%, var(--chakra-colors-dark-300) 100%)"
             color="white"
-            p={3}
-            borderRadius="lg"
+            p={4}
+            borderRadius="2xl"
             borderTopLeftRadius="0"
+            boxShadow="0 3px 10px rgba(0, 0, 0, 0.1)"
+            position="relative"
+            _after={{
+              content: '""',
+              position: "absolute",
+              top: 0,
+              left: "-12px",
+              width: 0,
+              height: 0,
+              borderTop: "12px solid var(--chakra-colors-dark-200)",
+              borderLeft: "12px solid transparent",
+            }}
           >
             <Flex align="center" mb={2}>
-              <Icon as={FaRobot} boxSize={4} mr={2} color="crimson.200" />
+              <Flex
+                align="center"
+                justify="center"
+                bg="primary.500"
+                color="white"
+                boxSize="24px"
+                borderRadius="full"
+                mr={2}
+              >
+                <Icon as={FaRobot} boxSize={3} />
+              </Flex>
               <Text fontWeight="bold">Assistant</Text>
             </Flex>
-            <Text>Thinking...</Text>
+            <Flex align="center">
+              <Box
+                className="typing-indicator"
+                height="8px"
+                width="8px"
+                borderRadius="full"
+                bg="primary.400"
+                mr="3px"
+                animation="pulse 1s infinite"
+              />
+              <Box
+                className="typing-indicator"
+                height="8px"
+                width="8px"
+                borderRadius="full"
+                bg="primary.400"
+                mr="3px"
+                animation="pulse 1s infinite 0.2s"
+              />
+              <Box
+                className="typing-indicator"
+                height="8px"
+                width="8px"
+                borderRadius="full"
+                bg="primary.400"
+                animation="pulse 1s infinite 0.4s"
+              />
+              <style>
+                {`
+                @keyframes pulse {
+                  0% { opacity: 0.3; transform: scale(0.8); }
+                  50% { opacity: 1; transform: scale(1.2); }
+                  100% { opacity: 0.3; transform: scale(0.8); }
+                }
+                `}
+              </style>
+              <Text ml={3}>Thinking...</Text>
+            </Flex>
           </Box>
         )}
 
@@ -180,8 +324,8 @@ const ChatInterface: React.FC = () => {
       {/* Input area */}
       <Box
         p={4}
-        borderTop="1px solid rgba(255, 255, 255, 0.1)"
-        bg="rgba(0, 0, 0, 0.2)"
+        borderTop="1px solid rgba(255, 255, 255, 0.08)"
+        bg="linear-gradient(180deg, var(--chakra-colors-dark-300) 0%, var(--chakra-colors-dark-400) 100%)"
       >
         <MessageInput />
       </Box>
