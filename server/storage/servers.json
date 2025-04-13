@@ -1,0 +1,182 @@
+[
+  {
+    "id": "bakery ",
+    "name": "Bakery ",
+    "url": "https://web-production-091a3.up.railway.app/sse"
+  },
+  {
+    "id": "Spotify",
+    "name": "Spotify ",
+    "url": "https://tjdgmjqend.us-east-1.awsapprunner.com"
+  },
+  {
+    "id": "Spotify1",
+    "name": "Spotify Song Search",
+    "url": "https://tjdgmjqend.us-east-1.awsapprunner.com/sse",
+    "description": "This MCP/NANDA server allows you to search songs, playlist and artists on Spotify based on your desired query terms.",
+    "types": [
+      "tool"
+    ],
+    "tags": [
+      "spotify",
+      "song-search"
+    ],
+    "verified": false,
+    "rating": 5
+  },
+  {
+    "id": "2871c512-7765-498c-831e-0b1a09be5336",
+    "name": "ConstructionAI",
+    "url": "https://smort-digital-tejas45.replit.app/mcp/sse",
+    "description": "With just a PDF, Smortr can help you get answers from your drawings, find discrepancies, and auto-generate RFIs and cost estimates.",
+    "types": [
+      "agent"
+    ],
+    "tags": [],
+    "verified": false,
+    "rating": 5
+  },
+  {
+    "id": "d0accff0-f994-49fa-aa37-c2b76ee59b3d",
+    "name": "Toxicology AI",
+    "url": "https://agjz7p7vza.us-east-1.awsapprunner.com/sse",
+    "description": "Toxicology AI MCP delivers insights from toxicology data related to medicolegal death investigations (MDI). It streams live responses from an AI system that analyzes trends, identifies substances, and surfaces patterns across toxicology reports — helping investigators, researchers, and public health teams get immediate, interpretable feedback from complex MDI datasets.",
+    "types": [
+      "tool"
+    ],
+    "tags": [
+      "toxicology",
+      "medicolegal-death-investigation",
+      "public-health-insights",
+      "forensic-data",
+      "forensic-toxicology",
+      "mdi-data",
+      "health"
+    ],
+    "verified": false,
+    "rating": 5
+  },
+  {
+    "id": "aa9262ad-6cd8-4d4d-9bf0-013517ecac08",
+    "name": "Search Spotify Songs",
+    "url": "https://mppfwfdsnu.us-east-1.awsapprunner.com/sse",
+    "description": "A tool to search your favorite songs, playlists and artists from Spotify.",
+    "types": [
+      "tool"
+    ],
+    "tags": [
+      "song-search",
+      "spotify-search",
+      "songs"
+    ],
+    "verified": false,
+    "rating": 1
+  },
+  {
+    "id": "97f3f10d-7c5e-4343-ad98-8b863121eafa",
+    "name": "Currency Converter MCP Server",
+    "url": "http://3.133.113.164:8080/sse",
+    "description": "Converts amounts from one currency to another using live exchange rates.",
+    "types": [
+      "tool"
+    ],
+    "tags": [
+      "currency",
+      "converter",
+      "finance"
+    ],
+    "verified": false,
+    "rating": 1
+  },
+  {
+    "id": "4e463897-3f21-44af-881e-00a9814a085a",
+    "name": "Synthetic Data generator",
+    "url": "https://gbznaqxwci.us-east-1.awsapprunner.com/sse",
+    "description": "This server was designed with keeping the goal of synthetic data generation in mind. \nThis is a list of tools.\nread_schema(FilePath)\nReturns the schema of a CSV file as a dictionary with column names and their data types.\n\nread_top_5_reccords(FilePath)\nReturns the top 5 rows from the given CSV file.\n\nexecute_python_script(script)\nExecutes a Python script (as a string) and returns \"Success\" or \"Failure: <error>\".\n\ngenerate_synthetic_data_from_gan(FilePath)\nTrains a CTGAN model on tabular data and outputs a synthetic CSV file.\n\nprofile_data(FilePath)\nReturns profiling stats for a dataset including:\n\nData type\nNull count\nUnique values\nMin and max values (for numeric columns)\ngenerate_fake_rows(columns, num_rows=10)\nGenerates fake rows using the Faker library for the provided column names.\n\nbalance_classes(FilePath, label_column, strategy='over')\nBalances class distribution using:\n\nOversampling (default)\nUndersampling\nSaves the output to a CSV file.\n\n\ngenerate_timegan_synthetic_data(real_data_path, sequence_length=24, epochs=500, batch_size=128, latent_dim=16)\nTrains a TimeGAN model on time-series data and generates synthetic sequences saved as",
+    "types": [
+      "tool"
+    ],
+    "tags": [],
+    "verified": false,
+    "rating": 0
+  },
+  {
+    "id": "767b2a3a-53ac-4dcf-8721-21a7c0584449",
+    "name": "Self Sovereign Identity Toolkit",
+    "url": "https://mcp-traction-api.xanaducyber.com/sse",
+    "description": "This project establishes a middleware communication layer between a Traction Self-Sovereign Identity (SSI) Custodial Wallet and a generative AI agent environment, using the Message-Channel-Protocol (MCP) framework. It integrates:\r\n\r\nA reactive client that communicates with a ChatOllama AI model\r\nMultiple toolchains derived from Traction's Swagger API\r\nStructured, multi-turn conversation flows\r\nComprehensive integration testing using a synthetic test tenant (\"Alice\")\r\nThe client simulates complex workflows by invoking tools in a structured fashion and summarizing outputs clearly. Tests are configured via .example-env and validate real-time interactions against the Traction instance.",
+    "types": [
+      "tool"
+    ],
+    "tags": [
+      "self-sovereign-identity",
+      "ssi",
+      "identity",
+      "decentralised-identity",
+      "zero-knowledge-proofs",
+      "cl-singatures",
+      "verifiable-credentials",
+      "traction",
+      "acapy",
+      "aries",
+      "hyperledger",
+      "identity-wallet"
+    ],
+    "verified": false,
+    "rating": 0
+  },
+  {
+    "id": "dce98a32-70aa-45ad-9266-b7dc8dce442c",
+    "name": "Mara MCP",
+    "url": "https://mcpapi.alys.pro/sse",
+    "description": "A Model Context Protocol (MCP) server that provides real-time Bitcoin blockchain data. This server can be integrated with NANDA Registry to enhance your AI assistants with live Bitcoin blockchain data.",
+    "types": [
+      "agent",
+      "tool"
+    ],
+    "tags": [
+      "mara",
+      "btc",
+      "bitcoin"
+    ],
+    "verified": false,
+    "rating": 0
+  },
+  {
+    "id": "a9ac8350-b64e-4eef-85e1-d1b67f9a3d39",
+    "name": "HCLSoftware Info",
+    "url": "http://nanda.eastus2.cloudapp.azure.com/sse",
+    "description": "Query about HCL Software products and solutions from the HCL Software Catalog. Capability \"hcl_sw_products\" takes a query about HCL Software product and provides an answer.",
+    "types": [
+      "agent",
+      "tool"
+    ],
+    "tags": [
+      "hcl",
+      "hcl-software"
+    ],
+    "verified": false,
+    "rating": 0
+  },
+  {
+    "id": "2e3131c0-65ae-4d84-9621-17a6e8f0e6cd",
+    "name": "Arxiv Paper Helper",
+    "url": "https://mjrupm9g3c.us-east-1.awsapprunner.com/sse",
+    "description": "We support various actions to do with looking up and working with papers on ArXiv. Functions that we have: arXiv_is_paper, arXiv_detect_directory, arxiv_search_papers, arxiv_download_paper, arxiv_rename_papers.",
+    "types": [
+      "tool",
+      "resource"
+    ],
+    "tags": [
+      "arxiv",
+      "academic-papers"
+    ],
+    "verified": false,
+    "rating": 0
+  },
+  {
+    "id": "9d0b54be-8a53-49c7-82ac-db8a356c7f21",
+    "name": "Spotify Song Search",
+    "url": "https://tjdgmjqend.us-east-1.awsapprunner.com/sse"
+  }
+]

@@ -5,11 +5,11 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { ToolRegistry } from "./toolRegistry.js";
 import { SessionManager } from "./sessionManager.js";
-import { McpManager, ToolCall, ToolInfo, ToolResult, CredentialRequirement } from './types.js';
-import { McpClient } from '@modelcontextprotocol/sdk';
+import { McpManager, ToolCall, ToolInfo, ToolResult, CredentialRequirement, ServerConfig, ToolCredentialInfo } from './types.js';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
+import { RegistryClient } from "../registry/client.js";
 
 // Add configuration for server persistence only
 const STORAGE_DIR = process.env.MCP_STORAGE_DIR || path.join(process.cwd(), 'storage');
@@ -52,58 +52,7 @@ const saveServers = (servers: ServerConfig[]) => {
   }
 };
 
-// Local type declarations instead of importing from shared
-interface ToolInfo {
-  name: string;
-  description?: string;
-  inputSchema: any;
-  credentialRequirements?: CredentialRequirement[];
-}
-
-interface CredentialRequirement {
-  id: string;
-  name: string;
-  description?: string;
-  acquisition?: {
-    url?: string;
-    instructions?: string;
-  };
-}
-
-interface ToolCredentialInfo {
-  toolName: string;
-  serverName: string;
-  serverId: string;
-  credentials: CredentialRequirement[];
-}
-
-export interface McpManager {
-  discoverTools: (sessionId: string) => Promise<ToolInfo[]>;
-  executeToolCall: (
-    sessionId: string,
-    toolName: string,
-    args: any
-  ) => Promise<any>;
-  registerServer: (serverConfig: ServerConfig) => Promise<void>;
-  getAvailableServers: () => ServerConfig[];
-  getToolsWithCredentialRequirements: (sessionId: string) => ToolCredentialInfo[];
-  setToolCredentials: (
-    sessionId: string, 
-    toolName: string, 
-    serverId: string, 
-    credentials: Record<string, string>
-  ) => Promise<boolean>;
-  cleanup: () => Promise<void>;
-  getSessionManager: () => SessionManager;
-}
-
-export interface ServerConfig {
-  id: string;
-  name: string;
-  url: string;
-}
-
-export function setupMcpManager(io: SocketIoServer): McpManager {
+export function setupMcpManager(io: SocketIoServer, registryUrl?: string, registryApiKey?: string): McpManager {
   console.log("--- McpManager setup initiated ---");
   
   // Registry to keep track of available MCP tools
@@ -117,6 +66,14 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
 
   // Cache of connected clients
   const connectedClients: Map<string, Client> = new Map();
+  
+  // Initialize registry client if URL is provided
+  const registryClient = registryUrl
+    ? new RegistryClient({
+        url: registryUrl,
+        apiKey: registryApiKey,
+      })
+    : null;
 
   const registerServer = async (serverConfig: ServerConfig): Promise<void> => {
     console.log(`Registering server: ${JSON.stringify(serverConfig)}`);
@@ -363,6 +320,60 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
     connectedClients.clear();
   };
 
+  // Fetch servers from registry
+  const fetchRegistryServers = async (): Promise<ServerConfig[]> => {
+    if (!registryClient) {
+      console.log("Fetching servers from registry is not implemented yet.");
+      return [];
+    }
+
+    try {
+      console.log("Fetching servers from registry...");
+      // Specify a high limit (e.g., 500) to get as many servers as possible
+      const registryServers = await registryClient.getServers(500);
+      console.log(`Fetched ${registryServers.length} servers from registry`);
+
+      // Register all discovered servers
+      for (const serverConfig of registryServers) {
+        // Check if server is already registered by ID or URL
+        const existingServerWithSameUrl = servers.find(
+          (s) => s.url === serverConfig.url
+        );
+
+        if (existingServerWithSameUrl) {
+          // Server with same URL exists, update it with new metadata but keep track
+          console.log(
+            `Server with URL ${serverConfig.url} already exists with ID ${existingServerWithSameUrl.id}, updating metadata`
+          );
+
+          // Update the existing server entry with new metadata
+          Object.assign(existingServerWithSameUrl, {
+            ...serverConfig,
+            id: existingServerWithSameUrl.id, // Keep the original ID
+          });
+          
+          // Save the updated server list
+          saveServers(servers);
+        } else if (!servers.some((s) => s.id === serverConfig.id)) {
+          // This is a completely new server, register it
+          try {
+            await registerServer(serverConfig);
+          } catch (error) {
+            console.error(
+              `Failed to register server ${serverConfig.name} from registry:`,
+              error
+            );
+          }
+        }
+      }
+
+      return registryServers;
+    } catch (error) {
+      console.error("Error fetching servers from registry:", error);
+      return [];
+    }
+  };
+
   // Auto-register all servers from storage on startup
   const autoRegisterServers = async () => {
     console.log(`Auto-registering ${servers.length} servers from storage...`);
@@ -386,5 +397,6 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
     setToolCredentials,
     cleanup,
     getSessionManager: () => sessionManager,
+    fetchRegistryServers
   };
 }

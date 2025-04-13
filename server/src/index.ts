@@ -14,6 +14,10 @@ config();
 const REGISTRY_URL = "https://nanda-registry.com";
 const REGISTRY_API_KEY = process.env.REGISTRY_API_KEY;
 
+// Log registry configuration
+console.log(`Registry URL configured: ${REGISTRY_URL}`);
+console.log(`Registry API Key: ${REGISTRY_API_KEY ? 'provided' : 'not provided or empty'}`);
+
 // Create Express app
 const app = express();
 const server = http.createServer(app);
@@ -48,10 +52,16 @@ setupRoutes(app, mcpManager);
 // Load servers from registry on startup
 (async () => {
   try {
-    // console.log("Fetching servers from registry...");
+    console.log("Fetching servers from registry...");
     const registryServers = await mcpManager.fetchRegistryServers();
     console.log(`Loaded ${registryServers.length} servers from registry`);
-    // console.warn("Registry URL is not set. Skipping server loading.");
+    if (registryServers.length === 0) {
+      console.log("No servers were found from the registry. Possible reasons:");
+      console.log("1. The registry API key might be missing or invalid");
+      console.log("2. The registry server might be unavailable");
+      console.log("3. There might not be any servers registered in the registry");
+      console.log("Try using the '/api/registry/refresh' endpoint to manually refresh servers.");
+    }
   } catch (error) {
     console.error("Error loading servers from registry:", error);
   }
@@ -68,9 +78,6 @@ process.on("SIGTERM", async () => {
     process.exit(0);
   });
 });
-
-// Setup routes
-setupRoutes(app, mcpManager);
 
 // Start the server
 const PORT = process.env.PORT || 4000;

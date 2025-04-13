@@ -1,7 +1,7 @@
 // server/src/routes.ts
 import { Express, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
-import { McpManager } from "./mcp/manager.js";
+import { McpManager } from "./mcp/types.js";
 
 export function setupRoutes(app: Express, mcpManager: McpManager): void {
   // Session endpoint
@@ -249,9 +249,28 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
       console.log(`API: /api/tools/credentials found ${tools.length} tools requiring credentials`);
       res.json({ tools });
     } catch (error) {
-      console.error("Error getting tools with credential requirements:", error);
+      console.error("Error fetching tools with credential requirements:", error);
       res.status(500).json({
-        error: error.message || "An error occurred while fetching tools",
+        error: error.message || "An error occurred while fetching tools with credential requirements",
+      });
+    }
+  });
+
+  // Registry refresh endpoint
+  app.post("/api/registry/refresh", async (req: Request, res: Response) => {
+    console.log("API: /api/registry/refresh called");
+    try {
+      const registryServers = await mcpManager.fetchRegistryServers();
+      res.json({
+        success: true,
+        servers: registryServers,
+      });
+    } catch (error) {
+      console.error("Error refreshing servers from registry:", error);
+      res.status(500).json({
+        error:
+          error.message ||
+          "An error occurred while refreshing registry servers",
       });
     }
   });
