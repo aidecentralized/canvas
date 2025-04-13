@@ -5,8 +5,10 @@ import React, {
   useState,
   useCallback,
   useRef,
+  useEffect,
 } from "react";
 import { useSettingsContext } from "./SettingsContext";
+import { useLoggingContext } from "./LoggingContext";
 import { v4 as uuidv4 } from "uuid";
 
 // Fix for undefined environment variables
@@ -55,10 +57,36 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
   const settingsContext = useSettingsContext();
   const fallbackSessionId = useRef<string>(uuidv4());
   
+  // Get access to the logging context
+  const { logToolCall, logRequest, logResponse } = useLoggingContext();
+  
   // Get the session ID - use from settings context if available, fallback if not
   const getSessionId = useCallback(() => {
     return settingsContext.sessionId || fallbackSessionId.current;
   }, [settingsContext.sessionId]);
+
+  // Watch for tool results and log them
+  useEffect(() => {
+    // Find the latest message that has tool calls
+    const lastMessageWithTools = [...messages].reverse().find(
+      (msg) => msg.toolCalls && msg.toolCalls.length > 0
+    );
+
+    // If we have a message with tools, check for new results to log
+    if (lastMessageWithTools?.toolCalls) {
+      lastMessageWithTools.toolCalls.forEach((toolCall) => {
+        // Only log if there's a result and we haven't logged it already
+        if (toolCall.result) {
+          // Log the tool result
+          logResponse({
+            toolName: toolCall.name,
+            toolId: toolCall.id,
+            result: toolCall.result.content,
+          }, toolCall.result.isError);
+        }
+      });
+    }
+  }, [messages, logResponse]);
 
   // Process assistant response to extract tool calls
   const processAssistantResponse = useCallback((response: any) => {
@@ -75,6 +103,9 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
             name: item.name,
             input: item.input,
           });
+          
+          // Log tool call to the logging panel
+          logToolCall(item.name, item.input);
         }
       }
     }
@@ -90,7 +121,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
       content: processedContent,
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     };
-  }, []);
+  }, [logToolCall]);
 
   // Send a message to the assistant
   const sendMessage = useCallback(
@@ -131,7 +162,25 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
           content: Array.isArray(msg.content) ? msg.content : [msg.content],
         }));
 
+        // Prepare the request body
+        const requestBody = {
+          messages: apiMessages,
+          tools: true,
+        };
+        
         console.log(`Sending message to ${API_BASE_URL}/api/chat/completions with session ID: ${getSessionId()}`);
+        
+        // Log the request to the logging panel
+        logRequest({
+          endpoint: `${API_BASE_URL}/api/chat/completions`,
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": "***REDACTED***", // Don't log actual API key
+            "X-Session-Id": getSessionId(),
+          },
+          body: requestBody,
+        });
         
         // Send request to our backend
         const response = await fetch(
@@ -143,10 +192,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
               "X-API-Key": apiKey,
               "X-Session-Id": getSessionId(),
             },
-            body: JSON.stringify({
-              messages: apiMessages,
-              tools: true,
-            }),
+            body: JSON.stringify(requestBody),
           }
         );
 
@@ -156,15 +202,35 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
           // Handle non-JSON response (like HTML error pages)
           const text = await response.text();
           console.error("Received non-JSON response:", text.substring(0, 200) + "...");
+          
+          // Log the error response
+          logResponse({
+            error: "Invalid response format (not JSON)",
+            status: response.status,
+            statusText: response.statusText,
+            preview: text.substring(0, 200) + "...",
+          }, true);
+          
           throw new Error(`Invalid response from server: Not JSON (${response.status} ${response.statusText})`);
         }
 
         if (!response.ok) {
           const errorData = await response.json();
+          
+          // Log the error response
+          logResponse({
+            error: errorData.error || `Server error: ${response.status} ${response.statusText}`,
+            status: response.status,
+            statusText: response.statusText,
+          }, true);
+          
           throw new Error(errorData.error || `Server error: ${response.status} ${response.statusText}`);
         }
 
         const responseData = await response.json();
+        
+        // Log the successful response
+        logResponse(responseData);
 
         // Process the response to extract tool calls
         const { content, toolCalls } = processAssistantResponse(responseData);
@@ -202,7 +268,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         setIsLoading(false);
       }
     },
-    [apiKey, messages, processAssistantResponse, getSessionId]
+    [apiKey, messages, processAssistantResponse, getSessionId, logRequest, logResponse]
   );
 
   // Clear all messages
