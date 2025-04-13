@@ -45,9 +45,8 @@ const ChatInterface: React.FC = () => {
       width="100%"
       maxWidth="1200px" // Increased max width for larger screens
       height="80vh" // Increased height to occupy more vertical space
-      // Apply functional glassmorphism style from theme
-      sx={theme.glassmorphism.card({ colorMode: useColorModeValue('light', 'dark') })}
-      // Manual styling removed - prefer using theme via sx prop
+      // Apply functional glassmorphism style object directly
+      sx={theme.glassmorphism.card} // Apply the style object directly
       p={0}
       position="relative"
       overflow="hidden"
