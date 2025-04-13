@@ -5,7 +5,9 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
 } from "react";
+import { v4 as uuidv4 } from "uuid";
 
 // Define the types locally instead of importing from a non-existent file
 interface ServerConfig {
@@ -39,6 +41,9 @@ interface ToolCredentialRequest {
 
 // Fix for undefined environment variables
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "";
+const STORAGE_KEY_API_KEY = "nanda-host-api-key";
+const STORAGE_KEY_SERVERS = "nanda-mcp-servers"; // Key for storing servers in localStorage
+const STORAGE_KEY_SESSION_ID = "nanda-session-id"; // Key for storing session ID
 
 interface SettingsContextProps {
   apiKey: string | null;
@@ -70,11 +75,6 @@ const SettingsContext = createContext<SettingsContextProps>({
 
 export const useSettingsContext = () => useContext(SettingsContext);
 
-// Local storage keys
-const API_KEY_STORAGE_KEY = "nanda_api_key";
-const NANDA_SERVERS_STORAGE_KEY = "nanda_servers";
-const SESSION_ID_STORAGE_KEY = "nanda_session_id";
-
 interface SettingsProviderProps {
   children: React.ReactNode;
 }
@@ -82,172 +82,117 @@ interface SettingsProviderProps {
 export const SettingsProvider: React.FC<SettingsProviderProps> = ({
   children,
 }: SettingsProviderProps) => {
-  const [apiKey, setApiKeyState] = useState<string | null>(null);
+  const [apiKey, setInternalApiKey] = useState<string | null>(null);
   const [nandaServers, setNandaServers] = useState<ServerConfig[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const fallbackSessionId = useRef<string>(uuidv4());
 
-  // Initialize session on mount
+  // Initialize API key from localStorage
   useEffect(() => {
-    const initSession = async () => {
-      // First, check if we have a stored session ID
-      const storedSessionId = localStorage.getItem(SESSION_ID_STORAGE_KEY);
-      if (storedSessionId) {
-        console.log("Using stored session ID:", storedSessionId);
-        setSessionId(storedSessionId);
-        return;
-      }
-      
-      // If no stored session, create a new one
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/session`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        });
-        
-        if (!response.ok) {
-          throw new Error("Failed to create session");
-        }
-        
-        const data = await response.json();
-        console.log("Created new session with ID:", data.sessionId);
-        // Store the new session ID in localStorage for future use
-        localStorage.setItem(SESSION_ID_STORAGE_KEY, data.sessionId);
-        setSessionId(data.sessionId);
-      } catch (error) {
-        console.error("Error creating session:", error);
-        // Fallback to a local session ID if needed
-        const fallbackId = "local-" + Math.random().toString(36).substring(2, 15);
-        console.log("Using fallback session ID:", fallbackId);
-        localStorage.setItem(SESSION_ID_STORAGE_KEY, fallbackId);
-        setSessionId(fallbackId);
-      }
-    };
-    
-    initSession();
-  }, []);
-
-  // Load settings from local storage on mount
-  useEffect(() => {
-    // Load API key
-    const storedApiKey = localStorage.getItem(API_KEY_STORAGE_KEY);
-    if (storedApiKey) {
-      setApiKeyState(storedApiKey);
+    const storedKey = localStorage.getItem(STORAGE_KEY_API_KEY);
+    if (storedKey) {
+      setInternalApiKey(storedKey);
     }
-
-    // Load Nanda servers
-    const storedServers = localStorage.getItem(NANDA_SERVERS_STORAGE_KEY);
+    
+    // Initialize MCP servers from localStorage
+    const storedServers = localStorage.getItem(STORAGE_KEY_SERVERS);
     if (storedServers) {
       try {
         const parsedServers = JSON.parse(storedServers);
-        if (Array.isArray(parsedServers)) {
-          setNandaServers(parsedServers);
-        }
+        setNandaServers(parsedServers);
       } catch (error) {
-        console.error("Failed to parse stored Nanda servers:", error);
+        console.error("Error parsing stored servers:", error);
+        // If parsing fails, initialize with empty array
+        setNandaServers([]);
       }
     }
   }, []);
 
-  // Save API key to local storage
+  // Set API key and store in localStorage
   const setApiKey = useCallback((key: string) => {
-    setApiKeyState(key);
-    localStorage.setItem(API_KEY_STORAGE_KEY, key);
+    setInternalApiKey(key);
+    localStorage.setItem(STORAGE_KEY_API_KEY, key);
   }, []);
 
-  // Register Nanda server
-  const registerNandaServer = useCallback((server: ServerConfig) => {
-    setNandaServers((prevServers: any) => {
-      // Check if server with this ID already exists
-      const existingIndex = prevServers.findIndex((s: any) => s.id === server.id);
-      let newServers: ServerConfig[];
-
-      if (existingIndex >= 0) {
-        // Update existing server
-        newServers = [...prevServers];
-        newServers[existingIndex] = server;
-      } else {
-        // Add new server
-        newServers = [...prevServers, server];
-      }
-
-      // Save to local storage
-      localStorage.setItem(
-        NANDA_SERVERS_STORAGE_KEY,
-        JSON.stringify(newServers)
-      );
-
-      // Also register with backend with increased timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout
-      
-      fetch(`${API_BASE_URL}/api/servers`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(server),
-        signal: controller.signal
-      })
-      .then(response => {
-        clearTimeout(timeoutId);
-        if (!response.ok) {
-          throw new Error(`Failed to register server: ${response.status} ${response.statusText}`);
+  // Initialize session
+  useEffect(() => {
+    const initSession = async () => {
+      try {
+        // Check for stored session ID
+        const storedSessionId = localStorage.getItem(STORAGE_KEY_SESSION_ID);
+        
+        if (storedSessionId) {
+          console.log("Using stored session ID:", storedSessionId);
+          setSessionId(storedSessionId);
+          return;
         }
-        return response.json();
-      })
-      .then(data => {
-        console.log(`Server ${server.id} registered successfully:`, data);
-      })
-      .catch((error) => {
-        console.error("Failed to register server with backend:", error);
-      });
+        
+        // Create new session
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/session`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
 
-      return newServers;
-    });
-  }, []);
+          if (!response.ok) {
+            throw new Error(`Failed to create session: ${response.status} ${response.statusText}`);
+          }
 
-  // Remove Nanda server
-  const removeNandaServer = useCallback((id: string) => {
-    setNandaServers((prevServers: any) => {
-      const newServers = prevServers.filter((server: any) => server.id !== id);
-      localStorage.setItem(
-        NANDA_SERVERS_STORAGE_KEY,
-        JSON.stringify(newServers)
-      );
-      return newServers;
-    });
-  }, []);
+          const data = await response.json();
+          console.log("Created new session with ID:", data.sessionId);
+          
+          // Save session ID
+          localStorage.setItem(STORAGE_KEY_SESSION_ID, data.sessionId);
+          setSessionId(data.sessionId);
+        } catch (error) {
+          // Use fallback ID if API call fails
+          const fallbackId = fallbackSessionId.current;
+          console.log("Using fallback session ID:", fallbackId);
+          localStorage.setItem(STORAGE_KEY_SESSION_ID, fallbackId);
+          setSessionId(fallbackId);
+        }
+        
+      } catch (error) {
+        console.error("Error initializing session:", error);
+      }
+    };
 
-  // Register servers with backend on initial load
+    initSession();
+  }, [apiKey]);
+
+  // Register servers with backend when they change
   useEffect(() => {
     if (nandaServers.length > 0 && sessionId) {
-      // Register all servers with the backend
+      // Save servers to localStorage whenever they change
+      localStorage.setItem(STORAGE_KEY_SERVERS, JSON.stringify(nandaServers));
+      
       const registerAllServers = async () => {
-        console.log("Registering servers with backend:", nandaServers);
         for (const server of nandaServers) {
           try {
-            const response = await fetch(`${API_BASE_URL}/api/servers`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "X-Session-ID": sessionId,
-              },
-              body: JSON.stringify(server),
-            });
-            
-            if (!response.ok) {
-              throw new Error(`Failed to register server: ${response.status} ${response.statusText}`);
-            }
-            
-            const data = await response.json();
-            console.log(`Server ${server.id} registered successfully:`, data);
-          } catch (error) {
-            console.error(
-              `Failed to register server ${server.id} with backend:`,
-              error
+            const response = await fetch(
+              `${API_BASE_URL}/api/servers`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(server),
+              }
             );
+
+            if (!response.ok) {
+              const errorData = await response.json();
+              console.error(`Failed to register server ${server.id}:`, errorData);
+              // Continue with other servers even if one fails
+            } else {
+              const data = await response.json();
+              console.log(`Server ${server.id} registered successfully:`, data);
+            }
+          } catch (error) {
+            console.error(`Error registering server ${server.id}:`, error);
+            // Continue with other servers even if one fails
           }
         }
       };
@@ -255,6 +200,32 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
       registerAllServers();
     }
   }, [nandaServers, sessionId]);
+
+  // Register Nanda server
+  const registerNandaServer = useCallback((server: ServerConfig) => {
+    setNandaServers((prevServers) => {
+      // Check if server with this ID already exists
+      const existingIndex = prevServers.findIndex((s) => s.id === server.id);
+      
+      if (existingIndex !== -1) {
+        // Update existing server
+        const updatedServers = [...prevServers];
+        updatedServers[existingIndex] = server;
+        return updatedServers;
+      } else {
+        // Add new server
+        return [...prevServers, server];
+      }
+    });
+  }, []);
+
+  // Remove Nanda server
+  const removeNandaServer = useCallback((id: string) => {
+    setNandaServers((prevServers) => {
+      // Filter out the server with the matching ID
+      return prevServers.filter((server) => server.id !== id);
+    });
+  }, []);
 
   // Get tools that require credentials
   const getToolsWithCredentialRequirements = useCallback(async (): Promise<ToolCredentialInfo[]> => {

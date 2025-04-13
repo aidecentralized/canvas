@@ -97,6 +97,7 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
       // Process tool calls if present
       const finalMessages = [...messages];
       let finalResponse = completion;
+      let serverUsed = null;
 
       // Check if there are any tool calls in the response
       const toolUses = completion.content.filter((c) => c.type === "tool_use");
@@ -113,11 +114,17 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
           try {
             console.log(`Executing tool call: ${toolUse.name} with input:`, JSON.stringify(toolUse.input));
             
+            // Execute the tool and get the server that was used
             const result = await mcpManager.executeToolCall(
               sessionId,
               toolUse.name,
               toolUse.input
             );
+            
+            // Capture server info if available
+            if (result.serverInfo) {
+              serverUsed = result.serverInfo;
+            }
 
             console.log(`Tool result for ${toolUse.name}:`, JSON.stringify(result.content));
             
@@ -173,7 +180,13 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
         });
       }
 
-      res.json(finalResponse);
+      // Add server info to the response
+      const responseWithServerInfo = {
+        ...finalResponse,
+        serverInfo: serverUsed
+      };
+
+      res.json(responseWithServerInfo);
     } catch (error) {
       console.error("Error creating chat completion:", error);
       res.status(500).json({

@@ -35,8 +35,13 @@ import {
   AccordionPanel,
   AccordionIcon,
   Spinner,
+  Center,
+  Alert,
+  AlertIcon,
+  AlertTitle,
+  AlertDescription,
 } from "@chakra-ui/react";
-import { FaEye, FaEyeSlash, FaPlus, FaExternalLinkAlt, FaSync } from "react-icons/fa";
+import { FaEye, FaEyeSlash, FaPlus, FaExternalLinkAlt, FaSync, FaTrash } from "react-icons/fa";
 import { useSettingsContext } from "../contexts/SettingsContext";
 
 // Define the types locally instead of importing from a non-existent file
@@ -228,7 +233,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     nandaServers, 
     registerNandaServer,
     getToolsWithCredentialRequirements,
-    setToolCredentials
+    setToolCredentials,
+    removeNandaServer
   } = useSettingsContext();
   
   const [tempApiKey, setTempApiKey] = useState("");
@@ -278,8 +284,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }
   }, [nandaServers, isOpen]);
 
+  // Add debug info to assist with troubleshooting
+  const debugToolCredentials = () => {
+    if (toolsWithCredentials.length > 0) {
+      const serverIds = Array.from(new Set(toolsWithCredentials.map(tool => tool.serverId)));
+      console.log(`Found tools from ${serverIds.length} servers:`, serverIds);
+      
+      serverIds.forEach(serverId => {
+        const serverTools = toolsWithCredentials.filter(tool => tool.serverId === serverId);
+        console.log(`Server ${serverId} has ${serverTools.length} tools:`, 
+          serverTools.map(t => t.toolName));
+      });
+    } else {
+      console.log("No tools with credentials found");
+    }
+  };
+
   const loadToolsWithCredentials = async () => {
-    // Clear any existing retry timers
+    // Clear any pending retries
     if (retryTimerRef.current) {
       clearTimeout(retryTimerRef.current);
       retryTimerRef.current = null;
@@ -293,6 +315,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       if (tools.length > 0) {
         console.log("Found tools with credentials:", tools);
         setToolsWithCredentials(tools);
+        // Debug information to help troubleshoot
+        setTimeout(debugToolCredentials, 100);
         setLoadAttempts(0); // Reset load attempts on success
         setIsLoadingTools(false);
       } else if (loadAttempts < 3 && nandaServers.length > 0) {
@@ -377,7 +401,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       return;
     }
 
-    // Register new server
+    // Register new server (will be saved to localStorage via context)
     registerNandaServer({
       id: newServer.id,
       name: newServer.name,
@@ -393,12 +417,35 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 
     toast({
       title: "Server Added",
-      description: `Server "${newServer.name}" has been added`,
+      description: `Server "${newServer.name}" has been added to your browser`,
       status: "success",
       duration: 3000,
       isClosable: true,
       position: "top",
     });
+    
+    // Reload tools after adding a server
+    setTimeout(() => {
+      loadToolsWithCredentials();
+    }, 1000);
+  };
+  
+  const handleRemoveServer = (serverId: string) => {
+    removeNandaServer(serverId);
+    
+    toast({
+      title: "Server Removed",
+      description: "Server has been removed from your browser",
+      status: "info",
+      duration: 3000,
+      isClosable: true,
+      position: "top",
+    });
+    
+    // Reload tools after removing a server
+    setTimeout(() => {
+      loadToolsWithCredentials();
+    }, 1000);
   };
 
   return (
@@ -585,13 +632,25 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                           }}
                           transition="all 0.2s"
                         >
-                          <Text fontWeight="bold" color="white">{server.name}</Text>
-                          <Text fontSize="sm" color="whiteAlpha.700">
-                            ID: {server.id}
-                          </Text>
-                          <Text fontSize="sm" color="whiteAlpha.700">
-                            URL: {server.url}
-                          </Text>
+                          <Flex justify="space-between">
+                            <Box>
+                              <Text fontWeight="bold" color="white">{server.name}</Text>
+                              <Text fontSize="sm" color="whiteAlpha.700">
+                                ID: {server.id}
+                              </Text>
+                              <Text fontSize="sm" color="whiteAlpha.700">
+                                URL: {server.url}
+                              </Text>
+                            </Box>
+                            <IconButton
+                              aria-label="Remove server"
+                              icon={<FaTrash />}
+                              size="sm"
+                              colorScheme="red"
+                              variant="ghost"
+                              onClick={() => handleRemoveServer(server.id)}
+                            />
+                          </Flex>
                         </Box>
                       ))
                     )}
@@ -682,43 +741,91 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   </Text>
                   
                   {isLoadingTools ? (
-                    <Flex justify="center" py={10}>
-                      <Spinner size="lg" color="crimson.500" />
-                    </Flex>
+                    <Center py={10}>
+                      <VStack spacing={4}>
+                        <Spinner
+                          thickness="4px"
+                          speed="0.65s"
+                          emptyColor="gray.700"
+                          color="primary.500"
+                          size="xl"
+                        />
+                        <Text color="gray.400">
+                          {loadAttempts > 0 
+                            ? `Loading tools (attempt ${loadAttempts+1}/4)...` 
+                            : "Loading tools..."}
+                        </Text>
+                      </VStack>
+                    </Center>
                   ) : toolsWithCredentials.length === 0 ? (
-                    <Box p={5} borderRadius="md" bg="rgba(0, 0, 0, 0.2)" textAlign="center">
-                      <Text color="gray.400" mb={2}>
-                        No tools requiring credentials found.
-                      </Text>
-                      <Text fontSize="sm" color="gray.500">
-                        Make sure you've added a server with tools that need API keys.
-                        <br/>After adding a server, click the Refresh button above.
-                      </Text>
-                    </Box>
+                    <Alert
+                      status="info"
+                      variant="subtle"
+                      flexDirection="column"
+                      alignItems="center"
+                      justifyContent="center"
+                      textAlign="center"
+                      borderRadius="md"
+                      bg="rgba(0, 0, 0, 0.2)"
+                      borderWidth="1px"
+                      borderColor="blue.800"
+                    >
+                      <AlertIcon boxSize="40px" mr={0} color="blue.300" />
+                      <AlertTitle mt={4} mb={1} fontSize="lg">
+                        No tools found
+                      </AlertTitle>
+                      <AlertDescription maxWidth="sm">
+                        {nandaServers.length === 0 ? (
+                          <>
+                            You need to register a Nanda server before tools will appear.
+                            Go to the "Nanda Servers" tab to add a server.
+                          </>
+                        ) : (
+                          <>
+                            No tools requiring credentials were found.
+                            Try refreshing or check your server configuration.
+                          </>
+                        )}
+                      </AlertDescription>
+                    </Alert>
                   ) : (
-                    <Accordion allowToggle defaultIndex={[0]}>
-                      {toolsWithCredentials.map((tool, index) => (
-                        <AccordionItem key={`${tool.serverId}-${tool.toolName}`} border="none">
-                          <h2>
-                            <AccordionButton 
-                              _hover={{ bg: "rgba(255, 255, 255, 0.05)" }}
-                              borderRadius="md"
-                            >
-                              <Box as="span" flex='1' textAlign='left'>
-                                {tool.toolName}
-                              </Box>
-                              <AccordionIcon />
-                            </AccordionButton>
-                          </h2>
-                          <AccordionPanel pb={4}>
-                            <ToolCredentialForm
-                              tool={tool}
-                              onSave={setToolCredentials}
-                            />
-                          </AccordionPanel>
-                        </AccordionItem>
-                      ))}
-                    </Accordion>
+                    <>
+                      {/* Group tools by server for better organization */}
+                      {(() => {
+                        // Create a map of serverId -> tools
+                        const serverMap: Record<string, ToolCredentialInfo[]> = {};
+                        
+                        // Group tools by server
+                        toolsWithCredentials.forEach(tool => {
+                          if (!serverMap[tool.serverId]) {
+                            serverMap[tool.serverId] = [];
+                          }
+                          serverMap[tool.serverId].push(tool);
+                        });
+                        
+                        // Render each server group
+                        return Object.entries(serverMap).map(([serverId, serverTools]) => {
+                          const serverName = serverTools[0]?.serverName || serverId;
+                          
+                          return (
+                            <Box key={serverId} mb={6}>
+                              <Heading size="xs" color="primary.300" mb={3} p={2} bg="rgba(0,0,0,0.2)" borderRadius="md">
+                                Server: {serverName}
+                              </Heading>
+                              <VStack spacing={4} align="stretch">
+                                {serverTools.map((tool) => (
+                                  <ToolCredentialForm
+                                    key={`${tool.serverId}-${tool.toolName}`}
+                                    tool={tool}
+                                    onSave={setToolCredentials}
+                                  />
+                                ))}
+                              </VStack>
+                            </Box>
+                          );
+                        });
+                      })()}
+                    </>
                   )}
                 </VStack>
               </TabPanel>

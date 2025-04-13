@@ -18,6 +18,8 @@ interface SharedToolInfo {
   description?: string;
   inputSchema: any;
   credentialRequirements?: CredentialRequirement[];
+  serverId?: string;
+  serverName?: string;
 }
 
 interface ToolInfo {
@@ -89,7 +91,9 @@ export class ToolRegistry {
       name: info.tool.name,
       description: info.tool.description,
       inputSchema: info.tool.inputSchema,
-      credentialRequirements: info.credentialRequirements
+      credentialRequirements: info.credentialRequirements,
+      serverId: info.serverId,
+      serverName: info.serverName
     }));
     
     console.log(`ToolRegistry: getAllTools returning ${tools.length} tools`);
@@ -103,7 +107,9 @@ export class ToolRegistry {
         name: info.tool.name,
         description: info.tool.description,
         inputSchema: info.tool.inputSchema,
-        credentialRequirements: info.credentialRequirements
+        credentialRequirements: info.credentialRequirements,
+        serverId: info.serverId,
+        serverName: info.serverName
       }));
   }
 

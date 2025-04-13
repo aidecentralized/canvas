@@ -5,51 +5,53 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { ToolRegistry } from "./toolRegistry.js";
 import { SessionManager } from "./sessionManager.js";
-import { McpManager, ToolCall, ToolInfo, ToolResult, CredentialRequirement } from './types.js';
-import { McpClient } from '@modelcontextprotocol/sdk';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
 
-// Add configuration for server persistence only
-const STORAGE_DIR = process.env.MCP_STORAGE_DIR || path.join(process.cwd(), 'storage');
-const SERVERS_FILE = path.join(STORAGE_DIR, 'servers.json');
+// Disable server-side persistence - we'll use browser-based storage instead
+// const STORAGE_DIR = process.env.MCP_STORAGE_DIR || path.join(process.cwd(), 'storage');
+// const SERVERS_FILE = path.join(STORAGE_DIR, 'servers.json');
 
-// Ensure the storage directory exists
-if (!fs.existsSync(STORAGE_DIR)) {
-  fs.mkdirSync(STORAGE_DIR, { recursive: true });
-}
+// // Ensure the storage directory exists
+// if (!fs.existsSync(STORAGE_DIR)) {
+//   fs.mkdirSync(STORAGE_DIR, { recursive: true });
+// }
 
-// Create servers file if it doesn't exist - with empty array
-if (!fs.existsSync(SERVERS_FILE)) {
-  fs.writeFileSync(SERVERS_FILE, JSON.stringify([], null, 2));
-}
+// // Create servers file if it doesn't exist - with empty array
+// if (!fs.existsSync(SERVERS_FILE)) {
+//   fs.writeFileSync(SERVERS_FILE, JSON.stringify([], null, 2));
+// }
 
-// Ensure the file is only readable by the server process
-try {
-  fs.chmodSync(SERVERS_FILE, 0o600);
-} catch (error) {
-  console.warn('Unable to set file permissions, server configuration may not be secure');
-}
+// // Ensure the file is only readable by the server process
+// try {
+//   fs.chmodSync(SERVERS_FILE, 0o600);
+// } catch (error) {
+//   console.warn('Unable to set file permissions, server configuration may not be secure');
+// }
 
-// Load servers from file
+// Disable loading servers from file - rely on client registrations only
 const loadServers = (): ServerConfig[] => {
-  try {
-    const data = fs.readFileSync(SERVERS_FILE, 'utf8');
-    return JSON.parse(data);
-  } catch (error) {
-    console.error('Error loading servers:', error);
-    return [];
-  }
+  // Comment out file loading
+  // try {
+  //   const data = fs.readFileSync(SERVERS_FILE, 'utf8');
+  //   return JSON.parse(data);
+  // } catch (error) {
+  //   console.error('Error loading servers:', error);
+  //   return [];
+  // }
+  return []; // Return empty array - no pre-loaded servers
 };
 
-// Save servers to file
+// Disable saving servers to file
 const saveServers = (servers: ServerConfig[]) => {
-  try {
-    fs.writeFileSync(SERVERS_FILE, JSON.stringify(servers, null, 2));
-  } catch (error) {
-    console.error('Error saving servers:', error);
-  }
+  // Comment out file saving
+  // try {
+  //   fs.writeFileSync(SERVERS_FILE, JSON.stringify(servers, null, 2));
+  // } catch (error) {
+  //   console.error('Error saving servers:', error);
+  // }
+  // No-op - we don't save servers anymore
 };
 
 // Local type declarations instead of importing from shared
@@ -58,6 +60,10 @@ interface ToolInfo {
   description?: string;
   inputSchema: any;
   credentialRequirements?: CredentialRequirement[];
+  client?: any;
+  tool?: any;
+  serverId?: string;
+  serverName?: string;
 }
 
 interface CredentialRequirement {
@@ -112,8 +118,8 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
   // Session manager to handle client sessions
   const sessionManager = new SessionManager();
 
-  // Available server configurations - load from storage
-  const servers: ServerConfig[] = loadServers();
+  // Available server configurations - start with empty array
+  const servers: ServerConfig[] = [];
 
   // Cache of connected clients
   const connectedClients: Map<string, Client> = new Map();
@@ -129,8 +135,8 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
       servers.push(serverConfig);
     }
     
-    // Save updated server list
-    saveServers(servers);
+    // Disabled server persistence - no longer saves to file
+    // saveServers(servers);
 
     try {
       // Create MCP client for this server using SSE transport
@@ -265,7 +271,12 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
             : [{ 
                 type: "text", 
                 text: `Tool result for ${toolName}`,
-              }]
+              }],
+          serverInfo: {
+            id: serverId,
+            name: toolInfo.serverName || serverId,
+            tool: toolName
+          }
         };
 
         console.log(`✅ Tool ${toolName} executed successfully after ${retries} retries`);
@@ -363,18 +374,18 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
     connectedClients.clear();
   };
 
-  // Auto-register all servers from storage on startup
-  const autoRegisterServers = async () => {
-    console.log(`Auto-registering ${servers.length} servers from storage...`);
-    for (const server of servers) {
-      await registerServer(server);
-    }
-  };
+  // Disable auto-registration process - rely on client registrations instead
+  // const autoRegisterServers = async () => {
+  //   console.log(`Auto-registering ${servers.length} servers from storage...`);
+  //   for (const server of servers) {
+  //     await registerServer(server);
+  //   }
+  // };
   
-  // Start auto-registration process in the background
-  autoRegisterServers().catch(error => {
-    console.error("Error auto-registering servers:", error);
-  });
+  // // Start auto-registration process in the background
+  // autoRegisterServers().catch(error => {
+  //   console.error("Error auto-registering servers:", error);
+  // });
 
   // Return the MCP manager interface
   return {

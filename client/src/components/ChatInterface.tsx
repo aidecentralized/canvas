@@ -10,6 +10,7 @@ import {
   Button,
   Badge,
   Tooltip,
+  Divider,
 } from "@chakra-ui/react";
 import { FaRobot, FaUser, FaTools, FaRegLightbulb } from "react-icons/fa";
 import { useChatContext } from "../contexts/ChatContext";
@@ -17,6 +18,7 @@ import { useSettingsContext } from "../contexts/SettingsContext";
 import MessageInput from "./MessageInput";
 import MessageContent from "./MessageContent";
 import ToolCallDisplay from "./ToolCallDisplay";
+import ActivityLog from "./ActivityLog";
 
 const ChatInterface: React.FC = () => {
   const theme = useTheme();
@@ -89,100 +91,170 @@ const ChatInterface: React.FC = () => {
         </Flex>
       </Flex>
 
-      {/* Messages container */}
-      <VStack
-        flex="1"
-        overflow="auto"
-        spacing={4}
-        p={4}
-        align="stretch"
-        bg="linear-gradient(135deg, var(--chakra-colors-dark-300) 0%, var(--chakra-colors-dark-400) 100%)"
-        css={{
-          "&::-webkit-scrollbar": {
-            width: "6px",
-          },
-          "&::-webkit-scrollbar-track": {
-            background: "rgba(0, 0, 0, 0.1)",
-            borderRadius: "3px",
-          },
-          "&::-webkit-scrollbar-thumb": {
-            background: "rgba(255, 255, 255, 0.15)",
-            borderRadius: "3px",
-            "&:hover": {
-              background: "rgba(255, 255, 255, 0.25)",
+      <Flex direction="row" flex="1" overflow="hidden">
+        {/* Messages container */}
+        <VStack
+          flex="1"
+          overflow="auto"
+          spacing={4}
+          p={4}
+          align="stretch"
+          bg="linear-gradient(135deg, var(--chakra-colors-dark-300) 0%, var(--chakra-colors-dark-400) 100%)"
+          css={{
+            "&::-webkit-scrollbar": {
+              width: "6px",
             },
-          },
-        }}
-      >
-        {messages.length === 0 ? (
-          <Flex
-            direction="column"
-            align="center"
-            justify="center"
-            height="100%"
-            px={8}
-            textAlign="center"
-            color="whiteAlpha.800"
-          >
-            <Box 
-              bg="rgba(90, 26, 255, 0.1)" 
-              p={5} 
-              borderRadius="full" 
-              mb={6}
-              boxShadow="0 5px 20px rgba(90, 26, 255, 0.2)"
+            "&::-webkit-scrollbar-track": {
+              background: "rgba(0, 0, 0, 0.1)",
+              borderRadius: "3px",
+            },
+            "&::-webkit-scrollbar-thumb": {
+              background: "rgba(255, 255, 255, 0.15)",
+              borderRadius: "3px",
+              "&:hover": {
+                background: "rgba(255, 255, 255, 0.25)",
+              },
+            },
+          }}
+        >
+          {messages.length === 0 ? (
+            <Flex
+              direction="column"
+              align="center"
+              justify="center"
+              height="100%"
+              px={8}
+              textAlign="center"
+              color="whiteAlpha.800"
             >
-              <Icon as={FaTools} boxSize={10} color="primary.400" />
-            </Box>
-            <Text fontSize="2xl" fontWeight="bold" mb={3} bgGradient="linear(to-r, primary.300, secondary.300)" bgClip="text">
-              Welcome to Nanda Chat Interface
-            </Text>
-            <Text mb={6} maxW="md" lineHeight="tall">
-              This AI uses the Nanda Protocol to enhance capabilities with
-              tools. Ask me anything, and I'll try to help by using my
-              intelligence and other tools and knowledge.
-            </Text>
-            <VStack spacing={2} align="stretch" maxW="sm">
-              <Text fontWeight="semibold" mb={1} display="flex" alignItems="center">
-                <Icon as={FaRegLightbulb} mr={2} color="secondary.300" /> Try asking:
-              </Text>
-              <Button
-                size="md"
-                variant="outline"
-                mb={2}
-                borderColor="primary.400"
-                color="primary.300"
-                _hover={{ bg: "rgba(90, 26, 255, 0.1)" }}
-                borderRadius="full"
-                boxShadow="0 2px 5px rgba(0, 0, 0, 0.1)"
+              <Box 
+                bg="rgba(90, 26, 255, 0.1)" 
+                p={5} 
+                borderRadius="full" 
+                mb={6}
+                boxShadow="0 5px 20px rgba(90, 26, 255, 0.2)"
               >
-                "What tools do you have available?"
-              </Button>
-            </VStack>
-          </Flex>
-        ) : (
-          messages.map((message, index) => (
+                <Icon as={FaTools} boxSize={10} color="primary.400" />
+              </Box>
+              <Text fontSize="2xl" fontWeight="bold" mb={3} bgGradient="linear(to-r, primary.300, secondary.300)" bgClip="text">
+                Welcome to Nanda Chat Interface
+              </Text>
+              <Text mb={6} maxW="md" lineHeight="tall">
+                This AI uses the Nanda Protocol to enhance capabilities with
+                tools. Ask me anything, and I'll try to help by using my
+                intelligence and other tools and knowledge.
+              </Text>
+              <VStack spacing={2} align="stretch" maxW="sm">
+                <Text fontWeight="semibold" mb={1} display="flex" alignItems="center">
+                  <Icon as={FaRegLightbulb} mr={2} color="secondary.300" /> Try asking:
+                </Text>
+                <Button
+                  size="md"
+                  variant="outline"
+                  mb={2}
+                  borderColor="primary.400"
+                  color="primary.300"
+                  _hover={{ bg: "rgba(90, 26, 255, 0.1)" }}
+                  borderRadius="full"
+                  boxShadow="0 2px 5px rgba(0, 0, 0, 0.1)"
+                >
+                  "What tools do you have available?"
+                </Button>
+              </VStack>
+            </Flex>
+          ) : (
+            messages.map((message, index) => (
+              <Box
+                key={index}
+                alignSelf={message.role === "user" ? "flex-end" : "flex-start"}
+                maxWidth="80%"
+                bg={getMessageGradient(message.role === "user")}
+                color="white"
+                p={4}
+                borderRadius="2xl"
+                borderTopRightRadius={message.role === "user" ? "0" : "2xl"}
+                borderTopLeftRadius={message.role === "user" ? "2xl" : "0"}
+                boxShadow="0 3px 10px rgba(0, 0, 0, 0.1)"
+                position="relative"
+                _after={message.role === "user" ? {
+                  content: '""',
+                  position: "absolute",
+                  top: 0,
+                  right: "-12px",
+                  width: 0,
+                  height: 0,
+                  borderTop: "12px solid var(--chakra-colors-primary-500)",
+                  borderRight: "12px solid transparent",
+                } : {
+                  content: '""',
+                  position: "absolute",
+                  top: 0,
+                  left: "-12px",
+                  width: 0,
+                  height: 0,
+                  borderTop: "12px solid var(--chakra-colors-dark-200)",
+                  borderLeft: "12px solid transparent",
+                }}
+              >
+                <Flex align="center" mb={2}>
+                  <Tooltip 
+                    label={message.role === "user" ? "You" : "Assistant"} 
+                    placement="top" 
+                    hasArrow
+                  >
+                    <Flex
+                      align="center"
+                      justify="center"
+                      bg={message.role === "user" ? "white" : "primary.500"}
+                      color={message.role === "user" ? "primary.500" : "white"}
+                      boxSize="24px"
+                      borderRadius="full"
+                      mr={2}
+                    >
+                      <Icon
+                        as={message.role === "user" ? FaUser : FaRobot}
+                        boxSize={3}
+                      />
+                    </Flex>
+                  </Tooltip>
+                  <Text fontWeight="bold" fontSize="sm">
+                    {message.role === "user" ? "You" : "Assistant"}
+                  </Text>
+                  <Text ml={2} fontSize="xs" color={message.role === "user" ? "whiteAlpha.800" : "whiteAlpha.700"}>
+                    {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                </Flex>
+
+                {/* Handle different content types */}
+                <MessageContent content={message.content} />
+
+                {/* Display tool calls if present */}
+                {message.role === "assistant" &&
+                  message.toolCalls &&
+                  message.toolCalls.length > 0 && (
+                    <Box mt={3}>
+                      {message.toolCalls.map((toolCall, idx) => (
+                        <ToolCallDisplay key={idx} toolCall={toolCall} />
+                      ))}
+                    </Box>
+                  )}
+              </Box>
+            ))
+          )}
+
+          {/* Loading indicator */}
+          {isLoading && (
             <Box
-              key={index}
-              alignSelf={message.role === "user" ? "flex-end" : "flex-start"}
+              alignSelf="flex-start"
               maxWidth="80%"
-              bg={getMessageGradient(message.role === "user")}
+              bg="linear-gradient(135deg, var(--chakra-colors-dark-200) 0%, var(--chakra-colors-dark-300) 100%)"
               color="white"
               p={4}
               borderRadius="2xl"
-              borderTopRightRadius={message.role === "user" ? "0" : "2xl"}
-              borderTopLeftRadius={message.role === "user" ? "2xl" : "0"}
+              borderTopLeftRadius="0"
               boxShadow="0 3px 10px rgba(0, 0, 0, 0.1)"
               position="relative"
-              _after={message.role === "user" ? {
-                content: '""',
-                position: "absolute",
-                top: 0,
-                right: "-12px",
-                width: 0,
-                height: 0,
-                borderTop: "12px solid var(--chakra-colors-primary-500)",
-                borderRight: "12px solid transparent",
-              } : {
+              _after={{
                 content: '""',
                 position: "absolute",
                 top: 0,
@@ -194,132 +266,69 @@ const ChatInterface: React.FC = () => {
               }}
             >
               <Flex align="center" mb={2}>
-                <Tooltip 
-                  label={message.role === "user" ? "You" : "Assistant"} 
-                  placement="top" 
-                  hasArrow
+                <Flex
+                  align="center"
+                  justify="center"
+                  bg="primary.500"
+                  color="white"
+                  boxSize="24px"
+                  borderRadius="full"
+                  mr={2}
                 >
-                  <Flex
-                    align="center"
-                    justify="center"
-                    bg={message.role === "user" ? "white" : "primary.500"}
-                    color={message.role === "user" ? "primary.500" : "white"}
-                    boxSize="24px"
-                    borderRadius="full"
-                    mr={2}
-                  >
-                    <Icon
-                      as={message.role === "user" ? FaUser : FaRobot}
-                      boxSize={3}
-                    />
-                  </Flex>
-                </Tooltip>
-                <Text fontWeight="bold" fontSize="sm">
-                  {message.role === "user" ? "You" : "Assistant"}
-                </Text>
-                <Text ml={2} fontSize="xs" color={message.role === "user" ? "whiteAlpha.800" : "whiteAlpha.700"}>
-                  {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </Text>
+                  <Icon as={FaRobot} boxSize={3} />
+                </Flex>
+                <Text fontWeight="bold">Assistant</Text>
               </Flex>
-
-              {/* Handle different content types */}
-              <MessageContent content={message.content} />
-
-              {/* Display tool calls if present */}
-              {message.role === "assistant" &&
-                message.toolCalls &&
-                message.toolCalls.length > 0 && (
-                  <Box mt={3}>
-                    {message.toolCalls.map((toolCall, idx) => (
-                      <ToolCallDisplay key={idx} toolCall={toolCall} />
-                    ))}
-                  </Box>
-                )}
+              <Flex align="center">
+                <Box
+                  className="typing-indicator"
+                  height="8px"
+                  width="8px"
+                  borderRadius="full"
+                  bg="primary.400"
+                  mr="3px"
+                  animation="pulse 1s infinite"
+                />
+                <Box
+                  className="typing-indicator"
+                  height="8px"
+                  width="8px"
+                  borderRadius="full"
+                  bg="primary.400"
+                  mr="3px"
+                  animation="pulse 1s infinite 0.2s"
+                />
+                <Box
+                  className="typing-indicator"
+                  height="8px"
+                  width="8px"
+                  borderRadius="full"
+                  bg="primary.400"
+                  animation="pulse 1s infinite 0.4s"
+                />
+                <style>
+                  {`
+                  @keyframes pulse {
+                    0% { opacity: 0.3; transform: scale(0.8); }
+                    50% { opacity: 1; transform: scale(1.2); }
+                    100% { opacity: 0.3; transform: scale(0.8); }
+                  }
+                  `}
+                </style>
+                <Text ml={3}>Thinking...</Text>
+              </Flex>
             </Box>
-          ))
-        )}
+          )}
 
-        {/* Loading indicator */}
-        {isLoading && (
-          <Box
-            alignSelf="flex-start"
-            maxWidth="80%"
-            bg="linear-gradient(135deg, var(--chakra-colors-dark-200) 0%, var(--chakra-colors-dark-300) 100%)"
-            color="white"
-            p={4}
-            borderRadius="2xl"
-            borderTopLeftRadius="0"
-            boxShadow="0 3px 10px rgba(0, 0, 0, 0.1)"
-            position="relative"
-            _after={{
-              content: '""',
-              position: "absolute",
-              top: 0,
-              left: "-12px",
-              width: 0,
-              height: 0,
-              borderTop: "12px solid var(--chakra-colors-dark-200)",
-              borderLeft: "12px solid transparent",
-            }}
-          >
-            <Flex align="center" mb={2}>
-              <Flex
-                align="center"
-                justify="center"
-                bg="primary.500"
-                color="white"
-                boxSize="24px"
-                borderRadius="full"
-                mr={2}
-              >
-                <Icon as={FaRobot} boxSize={3} />
-              </Flex>
-              <Text fontWeight="bold">Assistant</Text>
-            </Flex>
-            <Flex align="center">
-              <Box
-                className="typing-indicator"
-                height="8px"
-                width="8px"
-                borderRadius="full"
-                bg="primary.400"
-                mr="3px"
-                animation="pulse 1s infinite"
-              />
-              <Box
-                className="typing-indicator"
-                height="8px"
-                width="8px"
-                borderRadius="full"
-                bg="primary.400"
-                mr="3px"
-                animation="pulse 1s infinite 0.2s"
-              />
-              <Box
-                className="typing-indicator"
-                height="8px"
-                width="8px"
-                borderRadius="full"
-                bg="primary.400"
-                animation="pulse 1s infinite 0.4s"
-              />
-              <style>
-                {`
-                @keyframes pulse {
-                  0% { opacity: 0.3; transform: scale(0.8); }
-                  50% { opacity: 1; transform: scale(1.2); }
-                  100% { opacity: 0.3; transform: scale(0.8); }
-                }
-                `}
-              </style>
-              <Text ml={3}>Thinking...</Text>
-            </Flex>
-          </Box>
-        )}
+          {/* Invisible element to scroll to */}
+          <div ref={messagesEndRef} />
+        </VStack>
 
-        {/* Invisible element to scroll to */}
-        <div ref={messagesEndRef} />
-      </VStack>
+        {/* Activity Log Panel */}
+        <Box width="300px" bg="dark.500" p={2} borderLeft="1px solid" borderColor="gray.700">
+          <ActivityLog />
+        </Box>
+      </Flex>
 
       {/* Input area */}
       <Box

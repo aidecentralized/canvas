@@ -39,8 +39,8 @@ const io = new SocketIoServer(server, {
   },
 });
 
-// Initialize MCP Manager with registry URL
-const mcpManager = setupMcpManager(io, REGISTRY_URL, REGISTRY_API_KEY);
+// Initialize MCP Manager
+const mcpManager = setupMcpManager(io);
 
 // Setup routes
 setupRoutes(app, mcpManager);
@@ -48,12 +48,12 @@ setupRoutes(app, mcpManager);
 // Load servers from registry on startup
 (async () => {
   try {
-    // console.log("Fetching servers from registry...");
-    const registryServers = await mcpManager.fetchRegistryServers();
-    console.log(`Loaded ${registryServers.length} servers from registry`);
-    // console.warn("Registry URL is not set. Skipping server loading.");
+    // No need to fetch from registry as servers are loaded from local storage
+    console.log(`Loading servers from local storage...`);
+    const availableServers = mcpManager.getAvailableServers();
+    console.log(`Loaded ${availableServers.length} servers from local storage`);
   } catch (error) {
-    console.error("Error loading servers from registry:", error);
+    console.error("Error loading servers:", error);
   }
 })();
 
