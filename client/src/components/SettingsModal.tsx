@@ -35,13 +35,6 @@ import {
   AccordionPanel,
   AccordionIcon,
   Spinner,
-  Badge,
-  HStack,
-  SimpleGrid,
-  Card,
-  CardHeader,
-  CardBody,
-  CardFooter,
 } from "@chakra-ui/react";
 import { FaEye, FaEyeSlash, FaPlus, FaExternalLinkAlt, FaSync } from "react-icons/fa";
 import { useSettingsContext } from "../contexts/SettingsContext";
@@ -62,18 +55,6 @@ interface ToolCredentialInfo {
   serverName: string;
   serverId: string;
   credentials: CredentialRequirement[];
-}
-
-// Define the ServerConfig interface for registry servers
-interface ServerConfig {
-  id: string;
-  name: string;
-  url: string;
-  description?: string;
-  types?: string[];
-  tags?: string[];
-  verified?: boolean;
-  rating?: number;
 }
 
 interface SettingsModalProps {
@@ -240,73 +221,6 @@ const ToolCredentialForm: React.FC<ToolCredentialFormProps> = ({
   );
 };
 
-// New component for displaying a registry server card
-interface ServerCardProps {
-  server: ServerConfig;
-  onAdd: (server: ServerConfig) => void;
-  isAlreadyAdded: boolean;
-}
-
-const ServerCard: React.FC<ServerCardProps> = ({ server, onAdd, isAlreadyAdded }) => {
-  return (
-    <Card 
-      variant="outline" 
-      borderWidth="1px" 
-      borderColor="gray.700"
-      bg="rgba(0, 0, 0, 0.2)"
-      mb={4}
-    >
-      <CardHeader pb={2}>
-        <Flex justify="space-between" align="center">
-          <Heading size="sm" color="white">{server.name}</Heading>
-          {server.verified && (
-            <Badge colorScheme="green" variant="solid" fontSize="0.7em">
-              Verified
-            </Badge>
-          )}
-        </Flex>
-      </CardHeader>
-      
-      <CardBody pt={0} pb={2}>
-        <Text fontSize="sm" mb={2} color="gray.300">
-          {server.description || "No description provided"}
-        </Text>
-        
-        <HStack spacing={2} mb={2} wrap="wrap">
-          {server.types?.map((type, index) => (
-            <Badge key={`type-${index}`} colorScheme="blue" variant="subtle">
-              {type}
-            </Badge>
-          ))}
-          {server.tags?.map((tag, index) => (
-            <Badge key={`tag-${index}`} colorScheme="purple" variant="subtle">
-              {tag}
-            </Badge>
-          ))}
-        </HStack>
-        
-        {server.rating && (
-          <Text fontSize="sm" color="yellow.400">
-            Rating: {server.rating.toFixed(1)}/5.0
-          </Text>
-        )}
-      </CardBody>
-      
-      <CardFooter pt={1}>
-        <Button
-          size="sm"
-          colorScheme={isAlreadyAdded ? "gray" : "crimson"}
-          onClick={() => onAdd(server)}
-          isDisabled={isAlreadyAdded}
-          width="full"
-        >
-          {isAlreadyAdded ? "Already Added" : "Add Server"}
-        </Button>
-      </CardFooter>
-    </Card>
-  );
-};
-
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const { 
     apiKey, 
@@ -314,8 +228,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     nandaServers, 
     registerNandaServer,
     getToolsWithCredentialRequirements,
-    setToolCredentials,
-    refreshRegistry
+    setToolCredentials
   } = useSettingsContext();
   
   const [tempApiKey, setTempApiKey] = useState("");
@@ -330,10 +243,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [loadAttempts, setLoadAttempts] = useState(0);
   const retryTimerRef = useRef<NodeJS.Timeout | null>(null);
   const toast = useToast();
-  
-  // New state for registry servers
-  const [registryServers, setRegistryServers] = useState<ServerConfig[]>([]);
-  const [isLoadingRegistry, setIsLoadingRegistry] = useState(false);
 
   // Clear any existing timers on unmount
   useEffect(() => {
@@ -492,88 +401,99 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     });
   };
 
-  // Add a function to load registry servers
-  const loadRegistryServers = async () => {
-    setIsLoadingRegistry(true);
-    try {
-      const result = await refreshRegistry();
-      if (result && result.servers) {
-        setRegistryServers(result.servers);
-        toast({
-          title: "Registry servers loaded",
-          description: `Found ${result.servers.length} servers in the registry`,
-          status: "success",
-          duration: 3000,
-          isClosable: true,
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Error loading registry servers",
-        description: error instanceof Error ? error.message : "Failed to load registry servers",
-        status: "error",
-        duration: 3000,
-        isClosable: true,
-      });
-    } finally {
-      setIsLoadingRegistry(false);
-    }
-  };
-
-  // Check if a server is already added
-  const isServerAdded = (serverId: string) => {
-    return nandaServers.some(server => server.id === serverId);
-  };
-
-  // Add server from registry
-  const handleAddRegistryServer = (server: ServerConfig) => {
-    if (isServerAdded(server.id)) return;
-    
-    // Make sure the URL has /sse at the end if not already
-    let url = server.url;
-    if (!url.endsWith("/sse")) {
-      url = url.endsWith("/") ? `${url}sse` : `${url}/sse`;
-    }
-    
-    const serverToAdd = {
-      ...server,
-      url
-    };
-    
-    registerNandaServer(serverToAdd);
-    
-    toast({
-      title: "Server added",
-      description: `${server.name} has been added to your servers`,
-      status: "success",
-      duration: 3000,
-      isClosable: true,
-    });
-  };
-
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="xl">
-      <ModalOverlay backdropFilter="blur(10px)" />
-      <ModalContent
-        bg="rgba(20, 20, 20, 0.9)"
-        color="white"
-        borderRadius="md"
-        border="1px solid"
-        borderColor="gray.700"
+      <ModalOverlay backdropFilter="blur(15px)" bg="rgba(0, 0, 0, 0.6)" />
+      <ModalContent 
+        bg="linear-gradient(135deg, var(--chakra-colors-dark-200) 0%, var(--chakra-colors-dark-300) 100%)" 
+        borderRadius="xl" 
+        borderColor="rgba(255, 255, 255, 0.08)"
+        borderWidth="1px"
+        boxShadow="0 20px 50px rgba(0, 0, 0, 0.4)"
       >
-        <ModalHeader color="crimson.400">Settings</ModalHeader>
-        <ModalCloseButton />
+        <ModalHeader 
+          borderBottomWidth="1px" 
+          borderColor="rgba(255, 255, 255, 0.08)" 
+          pb={4}
+          fontWeight="600"
+          color="white"
+        >
+          Settings
+        </ModalHeader>
+
+        <ModalCloseButton color="whiteAlpha.700" _hover={{ color: "white", bg: "rgba(255, 255, 255, 0.1)" }} />
+        
         <ModalBody>
-          <Tabs colorScheme="crimson" variant="enclosed">
-            <TabList>
-              <Tab>API Key</Tab>
-              <Tab>MCP Servers</Tab>
-              <Tab>Credentials</Tab>
-              <Tab>Registry</Tab>
+          <Tabs 
+            variant="soft-rounded" 
+            colorScheme="primary" 
+            isLazy
+          >
+            <TabList mb={4}>
+              <Tab 
+                _selected={{ 
+                  bg: "primary.500", 
+                  color: "white",
+                  fontWeight: "semibold",
+                  boxShadow: "0 4px 10px rgba(90, 26, 255, 0.3)",
+                }}
+                fontWeight="medium"
+                px={4}
+                py={2}
+                color="whiteAlpha.800"
+                _hover={{ color: "white" }}
+              >
+                API
+              </Tab>
+              <Tab
+                _selected={{ 
+                  bg: "primary.500", 
+                  color: "white",
+                  fontWeight: "semibold",
+                  boxShadow: "0 4px 10px rgba(90, 26, 255, 0.3)",
+                }}
+                fontWeight="medium"
+                px={4}
+                py={2}
+                color="whiteAlpha.800"
+                _hover={{ color: "white" }}
+              >
+                Nanda Servers
+              </Tab>
+              <Tab
+                _selected={{ 
+                  bg: "primary.500", 
+                  color: "white",
+                  fontWeight: "semibold",
+                  boxShadow: "0 4px 10px rgba(90, 26, 255, 0.3)",
+                }}
+                fontWeight="medium"
+                px={4}
+                py={2}
+                color="whiteAlpha.800"
+                _hover={{ color: "white" }}
+              >
+                Tool Credentials
+              </Tab>
+              <Tab
+                _selected={{ 
+                  bg: "primary.500", 
+                  color: "white",
+                  fontWeight: "semibold",
+                  boxShadow: "0 4px 10px rgba(90, 26, 255, 0.3)",
+                }}
+                fontWeight="medium"
+                px={4}
+                py={2}
+                color="whiteAlpha.800"
+                _hover={{ color: "white" }}
+              >
+                About
+              </Tab>
             </TabList>
-            
+
             <TabPanels>
-              {/* API Key Tab Panel - Existing */}
+              {/* API Settings Tab */}
               <TabPanel>
                 <VStack spacing={4} align="stretch">
                   <FormControl isRequired>
@@ -639,8 +559,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   </Button>
                 </VStack>
               </TabPanel>
-              
-              {/* MCP Servers Tab Panel - Existing */}
+
+              {/* Nanda Servers Tab */}
               <TabPanel>
                 <VStack spacing={4} align="stretch">
                   <Box>
@@ -738,8 +658,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   </Box>
                 </VStack>
               </TabPanel>
-              
-              {/* Credentials Tab Panel - Existing */}
+
+              {/* Tool Credentials Tab */}
               <TabPanel>
                 <VStack spacing={4} align="stretch">
                   <Flex justify="space-between" align="center">
@@ -802,58 +722,41 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   )}
                 </VStack>
               </TabPanel>
-              
-              {/* New Registry Tab Panel */}
+
+              {/* About Tab */}
               <TabPanel>
-                <Box mb={4}>
-                  <Flex justify="space-between" align="center" mb={4}>
-                    <Heading size="md">Registry Servers</Heading>
-                    <Button 
-                      leftIcon={<FaSync />} 
-                      colorScheme="crimson" 
-                      size="sm" 
-                      onClick={loadRegistryServers}
-                      isLoading={isLoadingRegistry}
-                    >
-                      Refresh
-                    </Button>
-                  </Flex>
-                  
-                  {isLoadingRegistry ? (
-                    <Flex justify="center" align="center" minH="200px">
-                      <Spinner color="crimson.500" />
-                    </Flex>
-                  ) : registryServers.length > 0 ? (
-                    <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                      {registryServers.map(server => (
-                        <ServerCard
-                          key={server.id}
-                          server={server}
-                          onAdd={handleAddRegistryServer}
-                          isAlreadyAdded={isServerAdded(server.id)}
-                        />
-                      ))}
-                    </SimpleGrid>
-                  ) : (
-                    <Box 
-                      p={4} 
-                      borderRadius="md" 
-                      borderWidth="1px" 
-                      borderColor="gray.700"
-                      bg="rgba(0, 0, 0, 0.2)"
-                      textAlign="center"
-                    >
-                      <Text>No registry servers found. Click Refresh to load servers.</Text>
-                    </Box>
-                  )}
-                </Box>
+                <VStack spacing={4} align="stretch">
+                  <Heading size="md">Nanda Host</Heading>
+                  <Text>
+                    A beautiful chat interface with Nanda integration for
+                    enhanced capabilities through agents, resources, and tools.
+                  </Text>
+
+                  <Box p={3} borderRadius="md" bg="rgba(0, 0, 0, 0.2)">
+                    <Heading size="sm" mb={2}>
+                      What is Nanda?
+                    </Heading>
+                    <Text fontSize="sm">
+                      Nanda is an open standard built on top of MCP for enabling
+                      coordination between agents, resources and tools (ARTs).
+                      It enables LLMs to discover and execute tools, access
+                      resources, and use predefined prompts.
+                    </Text>
+                  </Box>
+
+                  <Divider />
+
+                  <Text fontSize="sm" color="gray.400">
+                    Version 1.0.0 • MIT License
+                  </Text>
+                </VStack>
               </TabPanel>
             </TabPanels>
           </Tabs>
         </ModalBody>
-        
+
         <ModalFooter>
-          <Button colorScheme="crimson" mr={3} onClick={onClose}>
+          <Button variant="ghost" onClick={onClose}>
             Close
           </Button>
         </ModalFooter>
