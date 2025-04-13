@@ -29,11 +29,6 @@ export class ToolRegistry {
     return Array.from(this.tools.values()).map((info) => info.tool);
   }
 
-  // Added method to get tools along with their serverId
-  getAllToolsWithInfo(): ToolInfo[] {
-    return Array.from(this.tools.values());
-  }
-
   getToolsByServerId(serverId: string): Tool[] {
     return Array.from(this.tools.values())
       .filter((info) => info.serverId === serverId)

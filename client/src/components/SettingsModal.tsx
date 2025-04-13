@@ -1,3 +1,4 @@
+// client/src/components/SettingsModal.tsx
 import React, { useState, useEffect } from "react";
 import {
   Modal,
@@ -30,7 +31,6 @@ import {
   InputRightElement,
   Spinner,
   Badge,
-  useColorModeValue,
 } from "@chakra-ui/react";
 import {
   FaEye,
@@ -39,10 +39,8 @@ import {
   FaSync,
   FaCheck,
   FaStar,
-  FaTrash,
 } from "react-icons/fa";
 import { useSettingsContext } from "../contexts/SettingsContext";
-import { useChatContext } from "../contexts/ChatContext"; // Import useChatContext
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -54,12 +52,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     apiKey,
     setApiKey,
     nandaServers,
-    registryServers,
     registerNandaServer,
-    removeNandaServer,
     refreshRegistry,
   } = useSettingsContext();
-  const { sessionId } = useChatContext(); // Get sessionId
   const [tempApiKey, setTempApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [newServer, setNewServer] = useState({
@@ -67,18 +62,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     name: "",
     url: "",
   });
+  const [registryServers, setRegistryServers] = useState<any[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const toast = useToast();
-
-  // Determine if session-dependent actions should be disabled
-  const isSessionReady = !!sessionId;
-
-  // Define colors based on theme mode
-  const registeredServerBg = useColorModeValue("gray.100", "rgba(0, 0, 0, 0.2)");
-  const registryServerBg = useColorModeValue("gray.100", "rgba(0, 0, 0, 0.2)");
-  const aboutBoxBg = useColorModeValue("gray.100", "rgba(0, 0, 0, 0.2)");
-  const textColor = useColorModeValue("gray.600", "gray.400");
-  const linkColor = useColorModeValue("crimson.600", "crimson.300");
 
   // Reset temp values when modal opens
   useEffect(() => {
@@ -89,10 +75,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   }, [isOpen, apiKey]);
 
   const handleSaveApiKey = () => {
-    if (!isSessionReady) {
-      toast({ title: "Session Not Ready", status: "warning", duration: 3000 });
-      return;
-    }
     setApiKey(tempApiKey);
     toast({
       title: "API Key Saved",
@@ -108,10 +90,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   };
 
   const handleAddServer = () => {
-    if (!isSessionReady) {
-      toast({ title: "Session Not Ready", status: "warning", duration: 3000 });
-      return;
-    }
     // Validate server info
     if (!newServer.id || !newServer.name || !newServer.url) {
       toast({
@@ -166,16 +144,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   };
 
   const handleRefreshRegistry = async () => {
-    if (!isSessionReady) {
-      toast({ title: "Session Not Ready", status: "warning", duration: 3000 });
-      return;
-    }
     setIsRefreshing(true);
     try {
       const result = await refreshRegistry();
-
-      // No need to set state here, it's handled in the context
-      // setRegistryServers(result.servers || []);
+      setRegistryServers(result.servers || []);
 
       toast({
         title: "Registry Refreshed",
@@ -203,67 +175,25 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   };
 
   const handleAddRegistryServer = (server: any) => {
-    if (!isSessionReady) {
-      toast({ title: "Session Not Ready", status: "warning", duration: 3000 });
-      return;
-    }
-    try {
-      console.log("Adding registry server:", server);
-
-      // Generate a unique ID if needed, though registry should provide one
-      const serverToAdd = {
-        ...server,
-        id: server.id || `registry-server-${Date.now()}` // Fallback ID generation
-      };
-
-      // Register the server via context
-      registerNandaServer(serverToAdd);
-
-      // Toast notification after successful registration (context update triggers UI change)
-      toast({
-        title: "Server Added",
-        description: `Registry server "${server.name}" has been added`,
-        status: "success",
-        duration: 3000,
-        isClosable: true,
-      });
-
-    } catch (error) {
-      console.error("Failed to add registry server:", error);
-      toast({
-        title: "Failed to Add Server",
-        description: error instanceof Error ? error.message : "Unknown error",
-        status: "error",
-        duration: 3000,
-        isClosable: true,
-      });
-    }
-  };
-
-  // Check if a server from the registry is already registered locally
-  const isServerRegistered = (serverId: string, serverUrl: string) => {
-    // Check if any registered server matches either the ID or the URL
-    return nandaServers.some(
-      (server) => server.id === serverId || server.url === serverUrl
-    );
-  };
-
-  const handleRemoveServer = (serverId: string, serverName: string) => {
-    if (!isSessionReady) {
-      toast({ title: "Session Not Ready", status: "warning", duration: 3000 });
-      return;
-    }
-    // Remove the confirmation dialog
-    removeNandaServer(serverId); // Call context function to remove
+    registerNandaServer({
+      id: server.id,
+      name: server.name,
+      url: server.url,
+    });
 
     toast({
-      title: "Server Removed",
-      description: `Server "${serverName}" has been removed`,
-      status: "info",
+      title: "Server Added",
+      description: `Registry server "${server.name}" has been added`,
+      status: "success",
       duration: 3000,
       isClosable: true,
       position: "top",
     });
+  };
+
+  // Check if a registry server is already registered
+  const isServerRegistered = (serverId: string) => {
+    return nandaServers.some((server) => server.id === serverId);
   };
 
   return (
@@ -272,8 +202,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       <ModalContent>
         <ModalHeader>Settings</ModalHeader>
         <ModalCloseButton />
-        {/* Add maxHeight and overflowY */}
-        <ModalBody maxHeight="70vh" overflowY="auto">
+        <ModalBody>
           <Tabs variant="soft-rounded" colorScheme="crimson">
             <TabList>
               <Tab>API</Tab>
@@ -314,18 +243,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                         href="https://console.anthropic.com/settings/keys"
                         target="_blank"
                         rel="noopener noreferrer"
-                        style={{ color: linkColor, textDecoration: "underline" }}
+                        style={{ color: "#f06", textDecoration: "underline" }}
                       >
                         Anthropic Console
                       </a>
                     </FormHelperText>
                   </FormControl>
 
-                  <Button
-                    colorScheme="crimson"
-                    onClick={handleSaveApiKey}
-                    isDisabled={!isSessionReady} // Disable if session not ready
-                  >
+                  <Button colorScheme="crimson" onClick={handleSaveApiKey}>
                     Save API Key
                   </Button>
                 </VStack>
@@ -339,7 +264,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                       Registered Nanda Servers
                     </Heading>
                     {nandaServers.length === 0 ? (
-                      <Text color={textColor}>No servers registered yet</Text>
+                      <Text color="gray.400">No servers registered yet</Text>
                     ) : (
                       nandaServers.map((server) => (
                         <Box
@@ -349,25 +274,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                           borderRadius="md"
                           borderLeft="3px solid"
                           borderLeftColor="crimson.500"
-                          bg={registeredServerBg}
+                          bg="rgba(0, 0, 0, 0.2)"
                         >
-                          <Flex justifyContent="space-between" alignItems="center">
-                            <Text fontWeight="bold">{server.name}</Text>
-                            <Button
-                              size="xs"
-                              colorScheme="red"
-                              leftIcon={<FaTrash />}
-                              onClick={() => handleRemoveServer(server.id, server.name)}
-                              variant="ghost"
-                              isDisabled={!isSessionReady} // Disable if session not ready
-                            >
-                              Remove
-                            </Button>
-                          </Flex>
-                          <Text fontSize="sm" color={textColor}>
+                          <Text fontWeight="bold">{server.name}</Text>
+                          <Text fontSize="sm" color="gray.400">
                             ID: {server.id}
                           </Text>
-                          <Text fontSize="sm" color={textColor}>
+                          <Text fontSize="sm" color="gray.400">
                             URL: {server.url}
                           </Text>
                         </Box>
@@ -429,7 +342,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                         leftIcon={<FaPlus />}
                         colorScheme="crimson"
                         onClick={handleAddServer}
-                        isDisabled={!isSessionReady} // Disable if session not ready
                       >
                         Add Server
                       </Button>
@@ -456,15 +368,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                         size="sm"
                         onClick={handleRefreshRegistry}
                         isLoading={isRefreshing}
-                        isDisabled={!isSessionReady} // Disable if session not ready
                       >
                         Refresh Registry
                       </Button>
                     </Flex>
 
                     {!isRefreshing && registryServers.length === 0 ? (
-                      <Text color={textColor}>
-                        {!isSessionReady ? "Initializing session..." : "No registry servers loaded. Click the refresh button to load servers from the registry."}
+                      <Text color="gray.400">
+                        No registry servers loaded. Click the refresh button to
+                        load servers from the registry.
                       </Text>
                     ) : (
                       <>
@@ -473,86 +385,97 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                             <Spinner size="xl" color="crimson.400" />
                           </Flex>
                         ) : (
-                          registryServers.map((server) => {
-                            const isAdded = isServerRegistered(server.id, server.url);
-                            return (
-                              <Box
-                                key={server.id}
-                                p={3}
-                                mb={2}
-                                borderRadius="md"
-                                borderLeft="3px solid"
-                                borderLeftColor={
-                                  server.verified ? "green.500" : "gray.500"
-                                }
-                                bg={registryServerBg}
-                                position="relative"
+                          registryServers.map((server) => (
+                            <Box
+                              key={server.id}
+                              p={3}
+                              mb={2}
+                              borderRadius="md"
+                              borderLeft="3px solid"
+                              borderLeftColor={
+                                server.verified ? "green.500" : "gray.500"
+                              }
+                              bg="rgba(0, 0, 0, 0.2)"
+                              position="relative"
+                            >
+                              <Flex
+                                justifyContent="space-between"
+                                alignItems="center"
                               >
-                                <Flex
-                                  justifyContent="space-between"
-                                  alignItems="center"
-                                >
-                                  <Text fontWeight="bold">
-                                    {server.name}
-                                    {server.verified && (
-                                      <Badge ml={2} colorScheme="green">
-                                        Verified
-                                      </Badge>
-                                    )}
-                                  </Text>
-                                  {server.rating && (
-                                    <Flex alignItems="center">
-                                      <FaStar color="gold" />
-                                      <Text ml={1} fontSize="sm">
-                                        {server.rating.toFixed(1)}
-                                      </Text>
-                                    </Flex>
+                                <Text fontWeight="bold">
+                                  {server.name}
+                                  {server.verified && (
+                                    <Badge ml={2} colorScheme="green">
+                                      Verified
+                                    </Badge>
                                   )}
-                                </Flex>
-
-                                <Text fontSize="sm" color={textColor} mt={1}>
-                                  ID: {server.id}
                                 </Text>
-                                <Text fontSize="sm" color={textColor}>
-                                  URL: {server.url}
-                                </Text>
-
-                                {server.description && (
-                                  <Text fontSize="sm" mt={1}>
-                                    {server.description}
-                                  </Text>
-                                )}
-
-                                {server.tags && server.tags.length > 0 && (
-                                  <Flex mt={2} flexWrap="wrap" gap={2}>
-                                    {server.tags.map(
-                                      (tag: string, index: number) => (
-                                        <Badge
-                                          key={index}
-                                          colorScheme="purple"
-                                          fontSize="xs"
-                                        >
-                                          {tag}
-                                        </Badge>
-                                      )
-                                    )}
+                                {server.rating && (
+                                  <Flex alignItems="center">
+                                    <FaStar color="gold" />
+                                    <Text ml={1} fontSize="sm">
+                                      {server.rating.toFixed(1)}
+                                    </Text>
                                   </Flex>
                                 )}
+                              </Flex>
 
-                                <Flex mt={2} justifyContent="flex-end">
-                                  <Button
-                                    size="xs"
-                                    colorScheme={isAdded ? "green" : "crimson"}
-                                    leftIcon={isAdded ? <FaCheck /> : <FaPlus />}
-                                    isDisabled={isAdded || !isSessionReady} // Disable if added OR session not ready
-                                    onClick={() => handleAddRegistryServer(server)}
-                                  >
-                                    {isAdded ? "Added" : "Add Server"}
-                                  </Button>
+                              <Text fontSize="sm" color="gray.400" mt={1}>
+                                ID: {server.id}
+                              </Text>
+                              <Text fontSize="sm" color="gray.400">
+                                URL: {server.url}
+                              </Text>
+
+                              {server.description && (
+                                <Text fontSize="sm" mt={1}>
+                                  {server.description}
+                                </Text>
+                              )}
+
+                              {server.tags && server.tags.length > 0 && (
+                                <Flex mt={2} flexWrap="wrap" gap={2}>
+                                  {server.tags.map(
+                                    (tag: string, index: number) => (
+                                      <Badge
+                                        key={index}
+                                        colorScheme="purple"
+                                        fontSize="xs"
+                                      >
+                                        {tag}
+                                      </Badge>
+                                    )
+                                  )}
                                 </Flex>
-                              </Box>
-                            );
-                          })
+                              )}
+
+                              <Flex mt={2} justifyContent="flex-end">
+                                <Button
+                                  size="xs"
+                                  colorScheme={
+                                    isServerRegistered(server.id)
+                                      ? "green"
+                                      : "crimson"
+                                  }
+                                  leftIcon={
+                                    isServerRegistered(server.id) ? (
+                                      <FaCheck />
+                                    ) : (
+                                      <FaPlus />
+                                    )
+                                  }
+                                  isDisabled={isServerRegistered(server.id)}
+                                  onClick={() =>
+                                    handleAddRegistryServer(server)
+                                  }
+                                >
+                                  {isServerRegistered(server.id)
+                                    ? "Added"
+                                    : "Add Server"}
+                                </Button>
+                              </Flex>
+                            </Box>
+                          ))
                         )}
                       </>
                     )}
@@ -569,7 +492,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                     enhanced capabilities through agents, resources, and tools.
                   </Text>
 
-                  <Box p={3} borderRadius="md" bg={aboutBoxBg}>
+                  <Box p={3} borderRadius="md" bg="rgba(0, 0, 0, 0.2)">
                     <Heading size="sm" mb={2}>
                       What is Nanda?
                     </Heading>
@@ -583,7 +506,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 
                   <Divider />
 
-                  <Text fontSize="sm" color={textColor}>
+                  <Text fontSize="sm" color="gray.400">
                     Version 1.0.0 • MIT License
                   </Text>
                 </VStack>

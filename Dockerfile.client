@@ -1,42 +1,30 @@
-# ---- Build Stage ----
+# Dockerfile.client
 FROM node:20-alpine AS build
-
-# Declare build argument
-ARG REACT_APP_API_BASE_URL
 
 WORKDIR /app
 
-# Copy package files
-COPY client/package.json client/package-lock.json* ./
-
 # Install dependencies
+COPY client/package*.json ./
 RUN npm install
 
-# Copy client source code (including shared)
-COPY client ./
-COPY shared ./shared
+# Copy client source code
+COPY client/ ./
+COPY shared/ ./shared/
 
-# Set the env var for the build process
-ENV REACT_APP_API_BASE_URL=$REACT_APP_API_BASE_URL
-
-# Build the React app
+# Build the application
 RUN npm run build
 
-# ---- Production Stage ----
+# Production environment
 FROM nginx:1.25.3-alpine
 
 # Copy the build output
 COPY --from=build /app/build /usr/share/nginx/html
 
-# Remove default Nginx config
-RUN rm /etc/nginx/conf.d/default.conf
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Copy our custom Nginx config
-# Assuming nginx.conf is in the client directory relative to the build context
-COPY client/nginx.conf /etc/nginx/conf.d/default.conf
-
-# Remove the runtime ENV var, it's not needed by Nginx or the built app
-# ENV API_BASE_URL=http://localhost:4000
+# Set environment variables
+ENV API_BASE_URL=http://localhost:4000
 
 # Expose port
 EXPOSE 3000

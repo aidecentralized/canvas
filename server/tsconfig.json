@@ -8,15 +8,12 @@
     "strict": false,
     "noImplicitAny": false,
     "skipLibCheck": true,
-    "outDir": "./dist",
-    "rootDir": ".",
+    "outDir": "dist",
+    "rootDir": "src",
     "declaration": true,
     "resolveJsonModule": true,
     "useUnknownInCatchVariables": false
   },
-  "include": [
-    "src/**/*.ts",
-    "shared/**/*.ts"
-  ],
+  "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }
