@@ -11,6 +11,7 @@ import { SessionManager } from "./mcp/sessionManager.js"; // Import SessionManag
 // Load environment variables
 config();
 
+
 // Registry settings
 const REGISTRY_URL = process.env.REGISTRY_URL || "https://nanda-registry.com"; // Allow override, can be undefined
 const REGISTRY_API_KEY = process.env.REGISTRY_API_KEY;
@@ -18,7 +19,6 @@ const REGISTRY_API_KEY = process.env.REGISTRY_API_KEY;
 // Client URL setting
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:3000"; // Default client URL
 
-// Create Express app
 const app = express();
 const server = http.createServer(app);
 
