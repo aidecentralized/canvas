@@ -5,9 +5,11 @@ import React, {
   useState,
   useCallback,
   useRef,
+  useEffect,
 } from "react";
 import { useSettingsContext } from "./SettingsContext";
 import { v4 as uuidv4 } from "uuid";
+import { socketService } from "../services/socketService";
 
 // Fix for undefined environment variables
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "";
@@ -33,7 +35,10 @@ export interface Message {
       content: any[];
       isError?: boolean;
     };
+    serverId?: string;
+    serverName?: string;
   }>;
+  isIntermediate?: boolean;
 }
 
 interface ChatContextProps {
@@ -88,6 +93,81 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     setActivityLogs(prevLogs => [...prevLogs, newEntry]);
   }, []);
 
+  // Set up socket.io handler for tool execution updates
+  useEffect(() => {
+    const handleToolExecution = (data: {
+      toolName: string;
+      serverId: string;
+      serverName: string;
+      result: {
+        content: any[];
+        isError?: boolean;
+      }
+    }) => {
+      console.log('Tool execution handler called with data:', data);
+      const { toolName, serverId, serverName, result } = data;
+      
+      // Update message with tool call result
+      setMessages(prevMessages => {
+        console.log('Current messages:', prevMessages);
+        // Find the message with the matching tool call
+        const updatedMessages = prevMessages.map(message => {
+          // Only update assistant messages with tool calls
+          if (message.role === 'assistant' && message.toolCalls) {
+            // Find the tool call that matches this execution
+            const hasMatchingTool = message.toolCalls.some(tc => tc.name === toolName && !tc.result);
+            
+            if (hasMatchingTool) {
+              console.log(`Found message with matching tool: ${toolName}`, message);
+              // Update the tool calls with results
+              const updatedToolCalls = message.toolCalls.map(tc => {
+                if (tc.name === toolName && !tc.result) {
+                  console.log(`Updating tool call with result: ${toolName}`, result);
+                  // Update this tool call with the result
+                  return {
+                    ...tc,
+                    result: {
+                      content: result.content || [],
+                      isError: result.isError || false
+                    },
+                    serverId,
+                    serverName
+                  };
+                }
+                return tc;
+              });
+              
+              return {
+                ...message,
+                toolCalls: updatedToolCalls
+              };
+            }
+          }
+          return message;
+        });
+        
+        console.log('Updated messages:', updatedMessages);
+        return updatedMessages;
+      });
+      
+      addLogEntry('tool-execution', `Tool executed: ${toolName}`, {
+        serverName,
+        serverId,
+        resultSummary: result.content ? JSON.stringify(result.content).substring(0, 100) + '...' : 'No content'
+      });
+    };
+    
+    console.log('Setting up tool execution handler');
+    // Register handler
+    socketService.addToolExecutionHandler(handleToolExecution);
+    
+    return () => {
+      console.log('Cleaning up tool execution handler');
+      // Clean up
+      socketService.removeToolExecutionHandler(handleToolExecution);
+    };
+  }, [addLogEntry]);
+
   // Process assistant response to extract tool calls
   const processAssistantResponse = useCallback((response: any) => {
     console.log("Raw response from API:", response);
@@ -98,10 +178,16 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     if (response.content && Array.isArray(response.content)) {
       for (const item of response.content) {
         if (item.type === "tool_use") {
+          // Get server info from cache if available
+          const serverInfo = socketService.getServerInfo(item.name);
+          
           toolCalls.push({
             id: item.id,
             name: item.name,
             input: item.input,
+            serverId: serverInfo?.serverId,
+            serverName: serverInfo?.serverName,
+            result: item.result
           });
           
           // Log tool usage
@@ -187,7 +273,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
             headers: {
               "Content-Type": "application/json",
               "X-API-Key": apiKey,
-              "X-Session-Id": getSessionId(),
+              "X-Session-Id": getSessionId() || "",
             },
             body: JSON.stringify({
               messages: apiMessages,
@@ -225,6 +311,21 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
 
         // Process the response to extract tool calls
         const { content, toolCalls } = processAssistantResponse(responseData);
+
+        // Process intermediate responses first
+        if (responseData.intermediateResponses && Array.isArray(responseData.intermediateResponses)) {
+          for (const intermediateResponse of responseData.intermediateResponses) {
+            const { content: intermediateContent } = processAssistantResponse(intermediateResponse);
+            const intermediateMessage: Message = {
+              id: uuidv4(),
+              role: "assistant",
+              content: intermediateContent,
+              timestamp: new Date(intermediateResponse.timestamp || Date.now()),
+              isIntermediate: true
+            };
+            setMessages((prevMessages) => [...prevMessages, intermediateMessage]);
+          }
+        }
 
         // Add assistant message
         const assistantMessage: Message = {

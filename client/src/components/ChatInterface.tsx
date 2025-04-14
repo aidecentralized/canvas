@@ -139,7 +139,9 @@ const ChatInterface: React.FC = () => {
               </Text>
             </Flex>
           ) : (
-            messages.map((message, index) => (
+            messages
+              .filter(message => !message.isIntermediate)
+              .map((message, index) => (
               <Box
                 key={index}
                 alignSelf={message.role === "user" ? "flex-end" : "flex-start"}

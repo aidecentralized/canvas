@@ -55,30 +55,18 @@ export class ToolRegistry {
         }
       );
       
-      console.log(`ToolRegistry: Tool ${tool.name} initial credentials: ${credentialRequirements ? JSON.stringify(credentialRequirements) : 'none'}`);
+      console.log(`ToolRegistry: Tool ${tool.name} credentials: ${credentialRequirements ? JSON.stringify(credentialRequirements) : 'none'}`);
 
-      // General approach: If no credentials are specified, add a default API key requirement
-      // This makes all tools credential-enabled without hardcoding specific servers
-      if (!credentialRequirements) {
-        console.log(`ToolRegistry: Adding default API key requirement for tool ${tool.name}`);
-        
-        // Add default API key requirement for any tool that doesn't specify credentials
-        credentialRequirements = [{
-          id: "api_key",
-          name: "API Key",
-          description: "API key required for accessing this tool"
-        }];
-      }
-
+      // Only set credential requirements if explicitly defined in the tool
       this.tools.set(tool.name, {
         serverId,
         serverName,
         client,
         tool,
-        credentialRequirements
+        credentialRequirements: credentialRequirements || []
       });
       
-      console.log(`ToolRegistry: Registered tool ${tool.name} with credentials: ${credentialRequirements ? JSON.stringify(credentialRequirements) : 'none'}`);
+      console.log(`ToolRegistry: Registered tool ${tool.name}`);
     }
   }
 

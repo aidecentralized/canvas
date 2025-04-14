@@ -19,6 +19,8 @@ interface ToolCallProps {
     id: string;
     name: string;
     input: any;
+    serverId?: string;
+    serverName?: string;
     result?: {
       content: any[];
       isError?: boolean;
@@ -27,7 +29,7 @@ interface ToolCallProps {
 }
 
 const ToolCallDisplay: React.FC<ToolCallProps> = ({ toolCall }) => {
-  const { name, input, result } = toolCall;
+  const { name, input, result, serverId, serverName } = toolCall;
   const hasResult = !!result;
   const isError = result?.isError;
 
@@ -172,6 +174,19 @@ const ToolCallDisplay: React.FC<ToolCallProps> = ({ toolCall }) => {
                     </Text>
                   ))}
                 </Box>
+              </Box>
+            )}
+
+            {/* Server info if available */}
+            {serverId && serverName && (
+              <Box mt={2}>
+                <Text 
+                  fontWeight="600" 
+                  fontSize="xs" 
+                  color="whiteAlpha.700"
+                >
+                  Server: {serverName} ({serverId.substring(0, 8)}...)
+                </Text>
               </Box>
             )}
           </AccordionPanel>

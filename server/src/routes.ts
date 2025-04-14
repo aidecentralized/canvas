@@ -49,7 +49,7 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
   // Update the chat completion endpoint to ensure session
   app.post("/api/chat/completions", async (req: Request, res: Response) => {
     console.log("API: /api/chat/completions called");
-    const { messages, tools = true } = req.body;
+    const { messages, tools = true, auto_proceed = true } = req.body;
     const apiKey = req.headers["x-api-key"] as string;
     const rawSessionId = (req.headers["x-session-id"] as string) || "";
     
@@ -99,15 +99,23 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
       const finalMessages = [...messages];
       let finalResponse = completion;
       let serverUsed = null;
+      let intermediateResponses = [];
 
       // Check if there are any tool calls in the response
       const toolUses = completion.content.filter((c) => c.type === "tool_use");
 
-      if (toolUses.length > 0) {
-        // Add the assistant's response with tool calls
+      if (toolUses.length > 0 && auto_proceed) {
+        // Add the assistant's initial response with tool calls
         finalMessages.push({
           role: "assistant",
-          content: completion.content,
+          content: completion.content
+        });
+        
+        // Add the initial response to intermediate responses
+        intermediateResponses.push({
+          role: "assistant",
+          content: completion.content.filter(c => c.type === "text"),
+          timestamp: new Date(),
         });
 
         // Process each tool call
@@ -149,6 +157,21 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
                 },
               ],
             });
+
+            // Get an intermediate response after each tool execution
+            const intermediateCompletion = await anthropic.messages.create({
+              model: "claude-3-5-sonnet-20241022",
+              max_tokens: 4000,
+              messages: finalMessages,
+            });
+
+            // Add intermediate response
+            intermediateResponses.push({
+              role: "assistant",
+              content: intermediateCompletion.content,
+              timestamp: new Date(),
+            });
+
           } catch (error) {
             console.error(`Error executing tool ${toolUse.name}:`, error);
 
@@ -173,18 +196,39 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
           }
         }
 
-        // Get a new completion with all the tool results
-        finalResponse = await anthropic.messages.create({
-          model: "claude-3-5-sonnet-20241022",
-          max_tokens: 4000,
-          messages: finalMessages,
-        });
+        try {
+          // Get a final completion with all the tool results
+          finalResponse = await anthropic.messages.create({
+            model: "claude-3-5-sonnet-20241022",
+            max_tokens: 4000,
+            messages: finalMessages,
+          });
+        } catch (error) {
+          console.error("Error creating final response:", error);
+          // If we can't get a final response, use the last intermediate response
+          if (intermediateResponses.length > 0) {
+            const lastIntermediate = intermediateResponses[intermediateResponses.length - 1];
+            // Create a response with the same structure as what Anthropic would return
+            finalResponse = {
+              id: completion.id,
+              content: lastIntermediate.content,
+              model: completion.model,
+              role: "assistant",
+              stop_reason: completion.stop_reason,
+              stop_sequence: completion.stop_sequence,
+              type: completion.type,
+              usage: completion.usage
+            };
+          }
+        }
       }
 
       // Add server info to the response
       const responseWithServerInfo = {
         ...finalResponse,
-        serverInfo: serverUsed
+        serverInfo: serverUsed,
+        requires_confirmation: !auto_proceed && toolUses.length > 0,
+        intermediateResponses: intermediateResponses
       };
 
       res.json(responseWithServerInfo);
@@ -242,10 +286,59 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
         args || {}
       );
       
+      // Get server info for the socket event
+      const serverInfo = result.serverInfo || {};
+      
+      // Log server info
+      console.log(`Server info for tool ${toolName}:`, serverInfo);
+      
+      // Emit a socket event with the tool execution result
+      if (req.app.get('io')) {
+        const io = req.app.get('io');
+        console.log('Emitting tool_executed event via socket.io');
+        
+        const eventData = {
+          toolName,
+          serverId: serverInfo.id || 'unknown',
+          serverName: serverInfo.name || 'Unknown Server',
+          result: {
+            content: result.content || [],
+            isError: false
+          }
+        };
+        
+        console.log('Event data:', JSON.stringify(eventData));
+        io.emit('tool_executed', eventData);
+        console.log(`Socket event emitted for tool: ${toolName}`);
+      } else {
+        console.warn('Socket.io not available for emitting events');
+      }
+      
       console.log(`✅ Tool ${toolName} executed successfully`);
       res.json(result);
     } catch (error) {
       console.error(`Error executing tool ${toolName}:`, error);
+      
+      // Emit error event via socket
+      if (req.app.get('io')) {
+        const io = req.app.get('io');
+        console.log('Emitting tool_executed error event via socket.io');
+        
+        const errorEventData = {
+          toolName,
+          serverId: 'unknown',
+          serverName: 'Error',
+          result: {
+            content: [{ type: 'text', text: `Error: ${error.message || 'Unknown error'}` }],
+            isError: true
+          }
+        };
+        
+        console.log('Error event data:', JSON.stringify(errorEventData));
+        io.emit('tool_executed', errorEventData);
+        console.log(`Socket error event emitted for tool: ${toolName}`);
+      }
+      
       res.status(500).json({
         error: error.message || "An error occurred while executing the tool",
       });

@@ -39,6 +39,18 @@ const io = new SocketIoServer(server, {
   },
 });
 
+// Store io instance in app for access in routes
+app.set('io', io);
+
+// Socket.IO event handling
+io.on('connection', (socket) => {
+  console.log(`Socket connected: ${socket.id}`);
+  
+  socket.on('disconnect', () => {
+    console.log(`Socket disconnected: ${socket.id}`);
+  });
+});
+
 // Initialize MCP Manager
 const mcpManager = setupMcpManager(io);
 
