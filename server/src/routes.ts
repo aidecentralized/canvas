@@ -1,4 +1,5 @@
 // server/src/routes.ts
+import axios from "axios";
 import { Express, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { McpManager } from "./mcp/manager.js";
@@ -46,6 +47,25 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
     return sessionId;
   };
 
+
+  async function getWeightedRatingScore(serverId: string): Promise<{ average: number, count: number, score: number }> {
+    try {
+      const response = await axios.get(`https://nanda-registry.com/api/v1/servers/${serverId}/ratings`);
+      const ratings = response.data?.data || [];
+  
+      const count = ratings.length;
+      const total = ratings.reduce((sum: number, r: any) => sum + r.rating, 0);
+      const average = count > 0 ? total / count : 0;
+      const score = average * count;
+  
+      return { average, count, score };
+    } catch (error) {
+      console.error(`Failed to fetch ratings for server ${serverId}:`, error);
+      return { average: 0, count: 0, score: 0 };
+    }
+  }
+
+
   // Update the chat completion endpoint to ensure session
   app.post("/api/chat/completions", async (req: Request, res: Response) => {
     console.log("API: /api/chat/completions called");
@@ -70,17 +90,67 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
         apiKey,
       });
 
+
+      //Mapping ratings to natural langauge
+      const ratingTextMap = {
+        1: "terrible",
+        2: "poorly rated",
+        3: "average",
+        4: "good",
+        5: "excellent",
+      };
+
+
       // Fetch available tools if enabled
       let availableTools = [];
       if (tools) {
         try {
           const discoveredTools = await mcpManager.discoverTools(sessionId);
 
-          availableTools = discoveredTools.map((tool) => ({
-            name: tool.name,
-            description: tool.description || "",
-            input_schema: tool.inputSchema,
+          // availableTools = discoveredTools.map((tool) => {
+          //   const ratingLabel = ratingTextMap[tool.rating || 0] || "unrated";
+          //   const enhancedDescription = `${tool.description || ""} (This tool runs on a ${ratingLabel} server with a ${tool.rating || "?"}/5 rating.)`;
+
+          //   return{
+          //     name: tool.name,
+          //     description: enhancedDescription,
+          //     input_schema: tool.inputSchema,
+          //   }
+          // });
+
+          availableTools = await Promise.all(discoveredTools.map(async (tool) => {
+            const { average, count, score } = await getWeightedRatingScore(tool.serverId);
+            const ratingLabel = ratingTextMap[Math.round(average) || 0] || "unrated";
+          
+            const enhancedDescription = `${tool.description || ""} 
+          (This tool runs on a ${ratingLabel} server with a ${average.toFixed(1)}/5 rating from ${count} reviewers — score: ${score.toFixed(1)}.)`;
+          
+            return {
+              name: tool.name,
+              description: enhancedDescription,
+              input_schema: tool.inputSchema,
+              score, // temporarily add score for sorting
+            };
           }));
+          
+          // Sort by score descending
+          availableTools.sort((a, b) => (b.score || 0) - (a.score || 0));
+          
+          // Remove score field before sending to Claude
+          availableTools = availableTools.map(({ score, ...tool }) => tool);
+
+
+          // Preparing Claude to prefer higher rated tools 
+          messages.unshift({
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "You are only being shown the highest-rated tools. Each includes the server's average rating, number of reviews, and a calculated reputation score. Prefer tools with higher scores — they are more trusted.",
+              },
+            ],
+          });
+
         } catch (error) {
           console.error("Error discovering tools:", error);
           // Continue without tools if there's an error
@@ -399,10 +469,13 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
     }
   });
 
+
+
   // Server registration endpoint
   app.post("/api/servers", async (req: Request, res: Response) => {
     console.log("API: /api/servers POST called with body:", JSON.stringify(req.body));
-    const { id, name, url } = req.body;
+    const { id, name, url, rating="unknown"} = req.body;
+    // const rating = getRating(id)  // !!!!ALYSSA use the rating api as another function
 
     if (!id || !name || !url) {
       return res
@@ -411,7 +484,11 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
     }
 
     try {
-      await mcpManager.registerServer({ id, name, url });
+
+      const { average, count, score } = await getWeightedRatingScore(id);
+      console.log(`📊 Server rating summary for ${name}: avg=${average}, votes=${count}, score=${score}`);
+
+      await mcpManager.registerServer({ id, name, url, rating:average});
       res.json({ success: true });
     } catch (error) {
       console.error("Error registering server:", error);

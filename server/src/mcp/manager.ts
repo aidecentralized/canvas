@@ -5,6 +5,9 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { ToolRegistry } from "./toolRegistry.js";
 import { SessionManager } from "./sessionManager.js";
+import { ToolInfo } from "./types.js";
+import { CredentialRequirement } from "./types.js";
+import { ServerConfig } from "./types.js";
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
@@ -55,26 +58,26 @@ const saveServers = (servers: ServerConfig[]) => {
 };
 
 // Local type declarations instead of importing from shared
-interface ToolInfo {
-  name: string;
-  description?: string;
-  inputSchema: any;
-  credentialRequirements?: CredentialRequirement[];
-  client?: any;
-  tool?: any;
-  serverId?: string;
-  serverName?: string;
-}
+// interface ToolInfo {
+//   name: string;
+//   description?: string;
+//   inputSchema: any;
+//   credentialRequirements?: CredentialRequirement[];
+//   client?: any;
+//   tool?: any;
+//   serverId?: string;
+//   serverName?: string;
+// }
 
-interface CredentialRequirement {
-  id: string;
-  name: string;
-  description?: string;
-  acquisition?: {
-    url?: string;
-    instructions?: string;
-  };
-}
+// interface CredentialRequirement {
+//   id: string;
+//   name: string;
+//   description?: string;
+//   acquisition?: {
+//     url?: string;
+//     instructions?: string;
+//   };
+// }
 
 interface ToolCredentialInfo {
   toolName: string;
@@ -103,11 +106,11 @@ export interface McpManager {
   getSessionManager: () => SessionManager;
 }
 
-export interface ServerConfig {
-  id: string;
-  name: string;
-  url: string;
-}
+// export interface ServerConfig {
+//   id: string;
+//   name: string;
+//   url: string;
+// }
 
 export function setupMcpManager(io: SocketIoServer): McpManager {
   console.log("--- McpManager setup initiated ---");
@@ -125,7 +128,9 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
   const connectedClients: Map<string, Client> = new Map();
 
   const registerServer = async (serverConfig: ServerConfig): Promise<void> => {
-    console.log(`Registering server: ${JSON.stringify(serverConfig)}`);
+    // console.log(`Registering server: ${JSON.stringify(serverConfig)}`);
+    console.log(`📦 Registering server: ${serverConfig.name}, rating: ${JSON.stringify(serverConfig.rating)}`);
+
     
     // Check if this server already exists
     const existingIndex = servers.findIndex((s) => s.id === serverConfig.id);
@@ -135,12 +140,9 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
       servers.push(serverConfig);
     }
     
-    // Check if we already have a connection to this server
-    if (connectedClients.has(serverConfig.id)) {
-      console.log(`Already connected to server ${serverConfig.id}, reusing existing connection`);
-      return; // Skip reconnection if already connected
-    }
-    
+    // Disabled server persistence - no longer saves to file
+    // saveServers(servers);
+
     try {
       // Create MCP client for this server using SSE transport
       const sseUrl = new URL(serverConfig.url);
@@ -152,12 +154,12 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
         name: "mcp-host",
         version: "1.0.0",
         // Set the timeout at the client level
-        defaultTimeout: 300000, // 5 minutes timeout (increased from 3 minutes)
+        defaultTimeout: 180000, // 3 minutes timeout
         // Add retry configuration
         retryConfig: {
-          maxRetries: 5, // Increased from 3
-          initialDelay: 2000, // Start with 2 seconds delay (increased from 1)
-          maxDelay: 20000,    // Max 20 second delay (increased from 10)
+          maxRetries: 3,
+          initialDelay: 1000, // Start with 1 second delay
+          maxDelay: 10000,    // Max 10 second delay
           backoffFactor: 2    // Exponential backoff factor
         }
       });
@@ -174,6 +176,7 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
         toolRegistry.registerTools(
           serverConfig.id, 
           serverConfig.name,
+          serverConfig.rating ?? 0,
           client, 
           toolsResult.tools
         );
@@ -222,21 +225,55 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
 
     while (retries <= maxRetries) {
       try {
-        // MODIFIED: Skip all credential logic for all tools
-        console.log(`🔧 Executing tool ${toolName} without requiring credentials (attempt ${retries + 1}/${maxRetries + 1})`);
+        // Get credentials for this tool if required
+        const credentials = sessionManager.getToolCredentials(
+          sessionId,
+          toolName,
+          serverId
+        );
         
-        // Execute the tool via MCP directly with the provided arguments
+        // Enhanced logging to show credential details
+        if (credentials) {
+          const credKeys = Object.keys(credentials);
+          console.log(`✅ Credentials retrieved successfully for ${toolName}, server ${serverId}`);
+          console.log(`🔑 Retrieved credential keys: ${JSON.stringify(credKeys)}`);
+          console.log(`✅ Executing tool ${toolName} with UI-provided credentials (attempt ${retries + 1}/${maxRetries + 1})`);
+          console.log(`📝 Credential keys: ${JSON.stringify(credKeys)}`);
+          
+          // Log a snippet of each credential value for verification
+          const credSnippets = {};
+          for (const key of credKeys) {
+            const value = credentials[key];
+            if (typeof value === 'string') {
+              // Only show first 4 chars to protect sensitive information
+              credSnippets[key] = value.substring(0, 4) + '...';
+            } else {
+              credSnippets[key] = typeof value;
+            }
+          }
+          console.log(`🔑 Credential snippets: ${JSON.stringify(credSnippets)}`);
+        } else {
+          console.log(`❌ No credentials found for tool ${toolName}, server ${serverId}`);
+          console.log(`⚠️ Executing tool ${toolName} WITHOUT UI-provided credentials - may use AWS credentials`);
+        }
+
+        // Add credentials to args if available
+        const argsWithCredentials = credentials 
+          ? { ...args, __credentials: credentials }
+          : args;
+
+        // Execute the tool via MCP
         const result = await client.callTool({
           name: toolName,
-          arguments: args,
+          arguments: argsWithCredentials,
           // The timeout is set at client level already
         });
 
-        // Add server info to the result for debugging
+        // Add credential source to the result for debugging
         const enhancedResult = {
           ...result,
           content: Array.isArray(result.content) 
-            ? result.content
+            ? result.content  // Remove debug info from the content
             : [{ 
                 type: "text", 
                 text: `Tool result for ${toolName}`,
@@ -297,16 +334,9 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
 
   // Get tools that require credentials
   const getToolsWithCredentialRequirements = (sessionId: string): ToolCredentialInfo[] => {
-    // TEMPORARILY DISABLED: Return empty array to prevent connection flooding
-    console.log(`[DISABLED] Tool credential check for session ${sessionId} - returning empty array`);
-    return [];
-    
-    // Original implementation commented out below
-    /*
     const tools = toolRegistry.getToolsWithCredentialRequirements();
     console.log(`Tools with credential requirements for session ${sessionId}: ${JSON.stringify(tools.map(t => t.toolName))}`);
     return tools;
-    */
   };
 
   // Set credentials for a tool
