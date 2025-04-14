@@ -39,31 +39,19 @@ export class ToolRegistry {
     for (const tool of tools) {
       console.log(`ToolRegistry: Processing tool: ${tool.name}`);
       
-      // Extract credential requirements if present in the tool definition
-      let credentialRequirements = (tool.inputSchema as any)?.__credentials?.required?.map(
-        (id: string): CredentialRequirement => {
-          const acquisition = (tool.inputSchema as any)?.__credentials?.acquisition;
-          return {
-            id,
-            name: id.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
-            description: (tool.inputSchema as any)?.__credentials?.descriptions?.[id],
-            acquisition: acquisition ? {
-              url: acquisition.url,
-              instructions: acquisition.instructions
-            } : undefined
-          };
-        }
-      );
+      // MODIFIED: Don't extract credential requirements - set to empty array
+      // This ensures no tools will require credentials
+      const credentialRequirements: CredentialRequirement[] = [];
       
-      console.log(`ToolRegistry: Tool ${tool.name} credentials: ${credentialRequirements ? JSON.stringify(credentialRequirements) : 'none'}`);
+      console.log(`ToolRegistry: Tool ${tool.name} credentials: none (credential requirements disabled)`);
 
-      // Only set credential requirements if explicitly defined in the tool
+      // Register the tool with empty credential requirements
       this.tools.set(tool.name, {
         serverId,
         serverName,
         client,
         tool,
-        credentialRequirements: credentialRequirements || []
+        credentialRequirements
       });
       
       console.log(`ToolRegistry: Registered tool ${tool.name}`);
@@ -107,26 +95,10 @@ export class ToolRegistry {
     serverId: string;
     credentials: CredentialRequirement[];
   }[] {
-    console.log(`ToolRegistry: Checking for tools with credential requirements`);
-    console.log(`ToolRegistry: Current tools: ${JSON.stringify(Array.from(this.tools.entries()).map(([name, info]) => {
-      return {
-        name,
-        serverId: info.serverId,
-        hasCredentials: !!(info.credentialRequirements && info.credentialRequirements.length > 0)
-      }
-    }))}`);
-    
-    const tools = Array.from(this.tools.values())
-      .filter(info => info.credentialRequirements && info.credentialRequirements.length > 0)
-      .map(info => ({
-        toolName: info.tool.name,
-        serverName: info.serverName,
-        serverId: info.serverId,
-        credentials: info.credentialRequirements || []
-      }));
-      
-    console.log(`ToolRegistry: getToolsWithCredentialRequirements returning ${tools.length} tools: ${JSON.stringify(tools.map(t => t.toolName))}`);
-    return tools;
+    // MODIFIED: Always return empty array
+    // This ensures the UI never shows credential requirements
+    console.log(`ToolRegistry: getToolsWithCredentialRequirements: credential requirements disabled, returning empty array`);
+    return [];
   }
 
   removeToolsByServerId(serverId: string): void {

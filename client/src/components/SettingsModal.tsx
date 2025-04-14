@@ -315,20 +315,9 @@ const ServerCard: React.FC<ServerCardProps> = ({ server, onAdd, isAlreadyAdded }
 };
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
-  const { 
-    apiKey, 
-    setApiKey, 
-    nandaServers, 
-    registerNandaServer,
-    removeNandaServer,
-    getToolsWithCredentialRequirements,
-    setToolCredentials,
-    refreshRegistry
-  } = useSettingsContext();
-  
   const [tempApiKey, setTempApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
-  const [newServer, setNewServer] = useState({
+  const [newServer, setNewServer] = useState<ServerConfig>({
     id: "",
     name: "",
     url: "",
@@ -337,15 +326,30 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [isLoadingTools, setIsLoadingTools] = useState(false);
   const [loadAttempts, setLoadAttempts] = useState(0);
   const retryTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const toast = useToast();
+  const mountCount = useRef<number>(0);
   
-  // New state for registry servers
   const [registryServers, setRegistryServers] = useState<ServerConfig[]>([]);
   const [isLoadingRegistry, setIsLoadingRegistry] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-
-  // Clear any existing timers on unmount
+  
+  const {
+    apiKey,
+    setApiKey,
+    nandaServers,
+    registerNandaServer,
+    removeNandaServer,
+    refreshRegistry,
+    getToolsWithCredentialRequirements,
+    setToolCredentials: saveToolCredentials,
+  } = useSettingsContext();
+  
+  const toast = useToast();
+  
+  // Increment mount count on component mount
   useEffect(() => {
+    mountCount.current += 1;
+    console.log(`Settings modal mounted ${mountCount.current} times`);
+    
     return () => {
       if (retryTimerRef.current) {
         clearTimeout(retryTimerRef.current);
@@ -395,15 +399,31 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   };
 
   const loadToolsWithCredentials = async () => {
+    // TEMPORARILY DISABLED: We don't need tool credentials for current servers
+    // This prevents excessive SSE reconnections caused by credential checks
+    console.log("Tool credentials functionality temporarily disabled to prevent connection flooding");
+    setToolsWithCredentials([]);
+    setIsLoadingTools(false);
+    return;
+
+    // Original implementation commented out below
+    /*
     // Clear any pending retries
     if (retryTimerRef.current) {
       clearTimeout(retryTimerRef.current);
       retryTimerRef.current = null;
     }
     
+    // Avoid redundant requests when already loading
+    if (isLoadingTools) {
+      console.log("Already loading tools, skipping duplicate request");
+      return;
+    }
+    
     setIsLoadingTools(true);
     
     try {
+      console.log("Fetching tools with credential requirements...");
       const tools = await getToolsWithCredentialRequirements();
       
       if (tools.length > 0) {
@@ -413,15 +433,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         setTimeout(debugToolCredentials, 100);
         setLoadAttempts(0); // Reset load attempts on success
         setIsLoadingTools(false);
-      } else if (loadAttempts < 3 && nandaServers.length > 0) {
-        // If no tools found but servers exist, try again after delay
+      } else if (loadAttempts < 2 && nandaServers.length > 0) { // Reduced from 3 to 2 attempts
+        // If no tools found but servers exist, try again after delay - but only once
         console.log(`No tools found on attempt ${loadAttempts + 1}, retrying...`);
         setLoadAttempts(prev => prev + 1);
         
         // Use reference to store timeout ID
         retryTimerRef.current = setTimeout(() => {
-          loadToolsWithCredentials();
-        }, 2000); // Wait 2 seconds before retrying
+          // Don't recursively call the function - this creates multiple connections
+          // Instead, just reset the loading state and increment the attempt counter
+          setIsLoadingTools(false);
+          // Only schedule another attempt if we haven't mounted too many times
+          if (mountCount.current < 3) {
+            console.log(`Scheduling retry attempt ${loadAttempts + 1}`);
+            loadToolsWithCredentials();
+          } else {
+            console.log("Too many mount attempts, abandoning tool loading");
+          }
+        }, 5000); // Increased from 2000ms to 5000ms to reduce frequency
       } else {
         // If max attempts reached or no servers, just set empty array
         console.log("Max retry attempts reached or no servers configured");
@@ -448,6 +477,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         setIsLoadingTools(false);
       }
     }, 10000);
+    */
   };
 
   const handleSaveApiKey = () => {
@@ -1014,7 +1044,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                                   <ToolCredentialForm
                                     key={`${tool.serverId}-${tool.toolName}`}
                                     tool={tool}
-                                    onSave={setToolCredentials}
+                                    onSave={saveToolCredentials}
                                   />
                                 ))}
                               </VStack>

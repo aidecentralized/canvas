@@ -135,9 +135,12 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
       servers.push(serverConfig);
     }
     
-    // Disabled server persistence - no longer saves to file
-    // saveServers(servers);
-
+    // Check if we already have a connection to this server
+    if (connectedClients.has(serverConfig.id)) {
+      console.log(`Already connected to server ${serverConfig.id}, reusing existing connection`);
+      return; // Skip reconnection if already connected
+    }
+    
     try {
       // Create MCP client for this server using SSE transport
       const sseUrl = new URL(serverConfig.url);
@@ -149,12 +152,12 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
         name: "mcp-host",
         version: "1.0.0",
         // Set the timeout at the client level
-        defaultTimeout: 180000, // 3 minutes timeout
+        defaultTimeout: 300000, // 5 minutes timeout (increased from 3 minutes)
         // Add retry configuration
         retryConfig: {
-          maxRetries: 3,
-          initialDelay: 1000, // Start with 1 second delay
-          maxDelay: 10000,    // Max 10 second delay
+          maxRetries: 5, // Increased from 3
+          initialDelay: 2000, // Start with 2 seconds delay (increased from 1)
+          maxDelay: 20000,    // Max 20 second delay (increased from 10)
           backoffFactor: 2    // Exponential backoff factor
         }
       });
@@ -219,55 +222,21 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
 
     while (retries <= maxRetries) {
       try {
-        // Get credentials for this tool if required
-        const credentials = sessionManager.getToolCredentials(
-          sessionId,
-          toolName,
-          serverId
-        );
+        // MODIFIED: Skip all credential logic for all tools
+        console.log(`🔧 Executing tool ${toolName} without requiring credentials (attempt ${retries + 1}/${maxRetries + 1})`);
         
-        // Enhanced logging to show credential details
-        if (credentials) {
-          const credKeys = Object.keys(credentials);
-          console.log(`✅ Credentials retrieved successfully for ${toolName}, server ${serverId}`);
-          console.log(`🔑 Retrieved credential keys: ${JSON.stringify(credKeys)}`);
-          console.log(`✅ Executing tool ${toolName} with UI-provided credentials (attempt ${retries + 1}/${maxRetries + 1})`);
-          console.log(`📝 Credential keys: ${JSON.stringify(credKeys)}`);
-          
-          // Log a snippet of each credential value for verification
-          const credSnippets = {};
-          for (const key of credKeys) {
-            const value = credentials[key];
-            if (typeof value === 'string') {
-              // Only show first 4 chars to protect sensitive information
-              credSnippets[key] = value.substring(0, 4) + '...';
-            } else {
-              credSnippets[key] = typeof value;
-            }
-          }
-          console.log(`🔑 Credential snippets: ${JSON.stringify(credSnippets)}`);
-        } else {
-          console.log(`❌ No credentials found for tool ${toolName}, server ${serverId}`);
-          console.log(`⚠️ Executing tool ${toolName} WITHOUT UI-provided credentials - may use AWS credentials`);
-        }
-
-        // Add credentials to args if available
-        const argsWithCredentials = credentials 
-          ? { ...args, __credentials: credentials }
-          : args;
-
-        // Execute the tool via MCP
+        // Execute the tool via MCP directly with the provided arguments
         const result = await client.callTool({
           name: toolName,
-          arguments: argsWithCredentials,
+          arguments: args,
           // The timeout is set at client level already
         });
 
-        // Add credential source to the result for debugging
+        // Add server info to the result for debugging
         const enhancedResult = {
           ...result,
           content: Array.isArray(result.content) 
-            ? result.content  // Remove debug info from the content
+            ? result.content
             : [{ 
                 type: "text", 
                 text: `Tool result for ${toolName}`,
@@ -328,9 +297,16 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
 
   // Get tools that require credentials
   const getToolsWithCredentialRequirements = (sessionId: string): ToolCredentialInfo[] => {
+    // TEMPORARILY DISABLED: Return empty array to prevent connection flooding
+    console.log(`[DISABLED] Tool credential check for session ${sessionId} - returning empty array`);
+    return [];
+    
+    // Original implementation commented out below
+    /*
     const tools = toolRegistry.getToolsWithCredentialRequirements();
     console.log(`Tools with credential requirements for session ${sessionId}: ${JSON.stringify(tools.map(t => t.toolName))}`);
     return tools;
+    */
   };
 
   // Set credentials for a tool

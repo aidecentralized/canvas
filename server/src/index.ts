@@ -37,6 +37,10 @@ const io = new SocketIoServer(server, {
     methods: ["GET", "POST"],
     credentials: true,
   },
+  // Increased timeouts and improved reconnection settings
+  pingTimeout: 60000, // 60 seconds ping timeout
+  pingInterval: 25000, // 25 seconds ping interval
+  connectTimeout: 30000 // 30 seconds connect timeout
 });
 
 // Store io instance in app for access in routes
