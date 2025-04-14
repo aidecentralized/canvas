@@ -1,25 +1,12 @@
 // server/src/mcp/manager.ts
 import { Server as SocketIoServer } from "socket.io";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { ToolRegistry } from "./toolRegistry.js";
+import { Tool } from "@modelcontextprotocol/sdk/types.js"; // Correct import path for Tool type
 import { SessionManager } from "./sessionManager.js";
-import { RegistryClient } from "../registry/client.js";
+import { ToolRegistry } from "./toolRegistry.js"; // Needed for session.toolRegistry
+import { RegistryClient } from "../registry/client.js"; // Import RegistryClient
 
-export interface McpManager {
-  discoverTools: (sessionId: string) => Promise<Tool[]>;
-  executeToolCall: (
-    sessionId: string,
-    toolName: string,
-    args: any
-  ) => Promise<any>;
-  registerServer: (serverConfig: ServerConfig) => Promise<void>;
-  fetchRegistryServers: () => Promise<ServerConfig[]>;
-  getAvailableServers: () => ServerConfig[];
-  cleanup: () => Promise<void>;
-}
-
+// Define ServerConfig interface
 export interface ServerConfig {
   id: string;
   name: string;
@@ -31,22 +18,25 @@ export interface ServerConfig {
   rating?: number;
 }
 
+export interface McpManager {
+  registerServer: (sessionId: string, serverConfig: ServerConfig) => Promise<void>;
+  unregisterServer: (sessionId: string, serverId: string) => Promise<void>;
+  getAvailableServers: (sessionId: string) => ServerConfig[];
+  discoverTools: (sessionId: string) => Promise<Tool[]>;
+  executeToolCall: (
+    sessionId: string,
+    toolName: string,
+    args: any
+  ) => Promise<any>;
+  fetchRegistryServers: () => Promise<ServerConfig[]>;
+}
+
 export function setupMcpManager(
   io: SocketIoServer,
-  registryUrl?: string,
+  sessionManager: SessionManager, // Inject SessionManager
+  registryUrl?: string, // Optional registry URL
   registryApiKey?: string
 ): McpManager {
-  // Registry to keep track of available MCP tools
-  const toolRegistry = new ToolRegistry();
-
-  // Session manager to handle client sessions
-  const sessionManager = new SessionManager();
-
-  // Available server configurations
-  const servers: ServerConfig[] = [];
-
-  // Cache of connected clients
-  const connectedClients: Map<string, Client> = new Map();
 
   // Registry client if URL is provided
   const registryClient = registryUrl
@@ -56,200 +46,215 @@ export function setupMcpManager(
       })
     : null;
 
-  // Fetch servers from registry
-  // In the fetchRegistryServers function
-  const fetchRegistryServers = async (): Promise<ServerConfig[]> => {
-    if (!registryClient) {
-      return [];
+  // Helper to get or create MCP client for a session/server
+  const getOrCreateClient = async (sessionId: string, serverConfig: ServerConfig): Promise<Client | null> => {
+    const session = sessionManager.getSession(sessionId);
+    if (!session) {
+        console.error(`[McpManager] Session ${sessionId} not found in getOrCreateClient.`);
+        return null;
     }
 
-    try {
-      const registryServers = await registryClient.getServers();
-
-      // Register all discovered servers
-      for (const serverConfig of registryServers) {
-        // Check if server is already registered by ID or URL
-        const existingServerWithSameUrl = servers.find(
-          (s) => s.url === serverConfig.url
-        );
-
-        if (existingServerWithSameUrl) {
-          // Server with same URL exists, update it with new metadata but keep track
-          console.log(
-            `Server with URL ${serverConfig.url} already exists with ID ${existingServerWithSameUrl.id}, updating metadata`
-          );
-
-          // Update the existing server entry with new metadata
-          Object.assign(existingServerWithSameUrl, {
-            ...serverConfig,
-            id: existingServerWithSameUrl.id, // Keep the original ID
-          });
-        } else if (!servers.some((s) => s.id === serverConfig.id)) {
-          // This is a completely new server, register it
-          try {
-            await registerServer(serverConfig);
-          } catch (error) {
-            console.error(
-              `Failed to register server ${serverConfig.name} from registry:`,
-              error
-            );
-          }
-        }
-      }
-
-      return registryServers;
-    } catch (error) {
-      console.error("Error fetching servers from registry:", error);
-      return [];
-    }
-  };
-
-  // In the registerServer function
-  const registerServer = async (serverConfig: ServerConfig): Promise<void> => {
-    // Check if server with same URL already exists
-    const existingUrlIndex = servers.findIndex(
-      (s) => s.url === serverConfig.url
-    );
-
-    if (existingUrlIndex !== -1) {
-      // A server with this URL already exists, update it
-      const existingId = servers[existingUrlIndex].id;
-      console.log(
-        `Updating server with URL ${serverConfig.url} (existing ID: ${existingId}, new ID: ${serverConfig.id})`
-      );
-
-      // Clean up old client connection if IDs differ
-      if (existingId !== serverConfig.id && connectedClients.has(existingId)) {
-        const oldClient = connectedClients.get(existingId);
+    let client = session.connectedClients.get(serverConfig.id);
+    if (client) { // Check if client exists in map
+        console.log(`[McpManager] Reusing existing client for server ${serverConfig.id} in session ${sessionId}`);
+        // Optional: Add a ping or status check here if the SDK supports it
         try {
-          await oldClient?.close();
-        } catch (error) {
-          console.error(
-            `Error closing old client connection for ${existingId}:`,
-            error
-          );
+            // Example: await client.ping(); // If a ping method exists
+            // If the SDK requires an explicit check or action to verify connection, add it here.
+            // If listTools itself serves as a connection check, this block might be simpler.
+            return client;
+        } catch (checkError) {
+            console.warn(`[McpManager] Existing client for ${serverConfig.id} failed check. Reconnecting. Error:`, checkError);
+            // Attempt to close the potentially defunct client before creating a new one
+            client.close().catch(err => console.error(`[McpManager] Error closing defunct client for ${serverConfig.id}: ${err}`));
+            sessionManager.removeSessionClient(sessionId, serverConfig.id); // Ensure removal
+            // Proceed to create a new client below
         }
-        connectedClients.delete(existingId);
-
-        // Remove tools from the old server
-        toolRegistry.removeToolsByServerId(existingId);
-      }
-
-      // Update the server entry
-      servers[existingUrlIndex] = serverConfig;
-    } else {
-      // Check if ID already exists
-      const existingIdIndex = servers.findIndex(
-        (s) => s.id === serverConfig.id
-      );
-      if (existingIdIndex !== -1) {
-        // Update existing server with same ID
-        servers[existingIdIndex] = serverConfig;
-      } else {
-        // Add new server
-        servers.push(serverConfig);
-      }
     }
 
+    console.log(`[McpManager] Creating new client for server ${serverConfig.id} (${serverConfig.url}) in session ${sessionId}`);
     try {
-      // Create MCP client for this server using SSE transport
-      const sseUrl = new URL(serverConfig.url);
-      const transport = new SSEClientTransport(sseUrl);
+        client = new Client({ url: serverConfig.url }); // Assuming default transport or configure SSE if needed
 
-      const client = new Client({
-        name: "mcp-host",
-        version: "1.0.0",
-      });
+        // Event listeners removed - error handling should be done around specific operations (listTools, callTool)
 
-      await client.connect(transport);
+        // Explicit connect call removed - assuming implicit connection on first RPC or handled by SDK constructor
 
-      // Fetch available tools from the server
-      const toolsResult = await client.listTools();
+        // Add client to session *before* attempting discovery
+        sessionManager.addSessionClient(sessionId, serverConfig.id, client);
 
-      // Register tools in our registry
-      if (toolsResult?.tools) {
-        toolRegistry.registerTools(serverConfig.id, client, toolsResult.tools);
-      }
+        // Discover tools immediately (acts as connection test)
+        try {
+            const listToolsResult = await client.listTools();
+            const tools: Tool[] = (listToolsResult && Array.isArray((listToolsResult as any).tools))
+                ? (listToolsResult as any).tools
+                : [];
 
-      // Store the connected client for later use
-      connectedClients.set(serverConfig.id, client);
+            console.log(`[McpManager] Discovered ${tools.length} tools from ${serverConfig.id} for session ${sessionId}`);
 
-      console.log(
-        `Registered server ${serverConfig.name} with ${
-          toolsResult?.tools?.length || 0
-        } tools`
-      );
+            if (tools.length > 0) {
+                session.toolRegistry.registerTools(serverConfig.id, client, tools);
+            } else {
+                 console.warn(`[McpManager] No tools found or unexpected format from listTools for ${serverConfig.id}`);
+            }
+        } catch (discoveryError) {
+            console.error(`[McpManager] Error discovering tools from ${serverConfig.id} for session ${sessionId}:`, discoveryError);
+            // If discovery fails, the connection likely failed. Close and remove the client.
+            client.close().catch(err => console.error(`[McpManager] Error closing client after discovery failure for ${serverConfig.id}: ${err}`));
+            sessionManager.removeSessionClient(sessionId, serverConfig.id); // Ensure removal on discovery failure
+            return null; // Indicate failure to create/connect/discover
+        }
+
+        return client;
     } catch (error) {
-      console.error(
-        `Failed to connect to MCP server ${serverConfig.name}:`,
-        error
-      );
-      // Remove the server from our list since we couldn't connect
-      const index = servers.findIndex((s) => s.id === serverConfig.id);
-      if (index !== -1) {
-        servers.splice(index, 1);
-      }
-      throw error;
+        console.error(`[McpManager] Failed to create client for server ${serverConfig.id} in session ${sessionId}:`, error);
+        // Ensure removal if client creation itself failed (e.g., invalid URL format in SDK constructor)
+        sessionManager.removeSessionClient(sessionId, serverConfig.id);
+        return null;
     }
   };
 
-  // Discover all available tools for a session
-  const discoverTools = async (sessionId: string): Promise<Tool[]> => {
-    return toolRegistry.getAllTools();
+  const registerServer = async (sessionId: string, serverConfig: ServerConfig): Promise<void> => {
+    console.log(`[McpManager] Registering server ${serverConfig.id} for session ${sessionId}`);
+    const added = sessionManager.addSessionServer(sessionId, serverConfig);
+    if (!added) {
+        throw new Error(`Session ${sessionId} not found.`);
+    }
+    // Attempt to connect and discover tools
+    await getOrCreateClient(sessionId, serverConfig);
   };
 
-  // Execute a tool call
+  const unregisterServer = async (sessionId: string, serverId: string): Promise<void> => {
+    console.log(`[McpManager] Unregistering server ${serverId} for session ${sessionId}`);
+    const session = sessionManager.getSession(sessionId);
+    if (!session) {
+        console.warn(`[McpManager] Session ${sessionId} not found during unregisterServer.`);
+        return; // Or throw? Consistent with registerServer, maybe throw.
+    }
+
+    // Close and remove client connection
+    const client = session.connectedClients.get(serverId);
+    if (client) {
+        // Attempt to close, but don't wait indefinitely. Handle potential errors.
+        client.close().catch(err => console.error(`[McpManager] Error closing client during unregister for ${serverId} in session ${sessionId}: ${err}`));
+        // Remove client from session manager immediately after initiating close
+        sessionManager.removeSessionClient(sessionId, serverId);
+    } else {
+        // Ensure removal from map even if client wasn't found (e.g., connection failed initially)
+        sessionManager.removeSessionClient(sessionId, serverId);
+    }
+
+
+    // Remove server config from session list
+    sessionManager.removeSessionServer(sessionId, serverId);
+
+    // Remove tools associated with this server from the session's registry
+    session.toolRegistry.removeToolsByServerId(serverId); // Corrected method name
+    console.log(`[McpManager] Server ${serverId} and its tools removed for session ${sessionId}`);
+  };
+
+  const getAvailableServers = (sessionId: string): ServerConfig[] => {
+    return sessionManager.getSessionServers(sessionId);
+  };
+
+  const discoverTools = async (sessionId: string): Promise<Tool[]> => {
+    const session = sessionManager.getSession(sessionId);
+    if (!session) {
+        console.error(`[McpManager] Session ${sessionId} not found during discoverTools.`);
+        return [];
+    }
+    console.log(`[McpManager] Discovering tools for session ${sessionId}`);
+
+    // Optional: Could add logic here to re-discover tools from connected clients if needed.
+    // For now, rely on discovery during connection via getOrCreateClient.
+
+    // Return all tools currently registered for the session
+    return session.toolRegistry.getAllTools(); // Use session's toolRegistry
+  };
+
   const executeToolCall = async (
     sessionId: string,
     toolName: string,
     args: any
   ): Promise<any> => {
-    const toolInfo = toolRegistry.getToolInfo(toolName);
+    const session = sessionManager.getSession(sessionId);
+    if (!session) {
+        throw new Error(`Session ${sessionId} not found.`);
+    }
+    console.log(`[McpManager] Executing tool '${toolName}' for session ${sessionId}`);
+
+    // Find tool in the SESSION-SPECIFIC registry
+    const toolInfo = session.toolRegistry.getToolInfo(toolName); // Use session's toolRegistry
     if (!toolInfo) {
-      throw new Error(`Tool ${toolName} not found`);
+      throw new Error(`Tool '${toolName}' not found in registry for session ${sessionId}`);
     }
 
-    const { client, tool } = toolInfo;
+    const { serverId } = toolInfo;
+    // Get the session-specific client connection
+    let client = session.connectedClients.get(serverId);
 
-    try {
-      // Execute the tool via MCP
-      const result = await client.callTool({
-        name: toolName,
-        arguments: args,
-      });
-
-      return result;
-    } catch (error) {
-      console.error(`Error executing tool ${toolName}:`, error);
-      throw error;
-    }
-  };
-
-  // Get all available server configurations
-  const getAvailableServers = (): ServerConfig[] => {
-    return [...servers];
-  };
-
-  // Clean up connections when closing
-  const cleanup = async (): Promise<void> => {
-    for (const [serverId, client] of connectedClients.entries()) {
-      try {
-        await client.close();
-        console.log(`Closed connection to server ${serverId}`);
-      } catch (error) {
-        console.error(`Error closing connection to server ${serverId}:`, error);
+    // If client is missing, attempt to reconnect
+    if (!client) { // Check only if client exists in map
+      const serverConfig = session.servers.find(s => s.id === serverId);
+      if (serverConfig) {
+          console.warn(`[McpManager] Client for ${serverId} not found. Attempting reconnect for session ${sessionId}...`);
+          client = await getOrCreateClient(sessionId, serverConfig); // Re-assign client
+          if (!client) {
+              throw new Error(`Failed to reconnect to server ${serverId} for tool '${toolName}' in session ${sessionId}`);
+          }
+      } else {
+          // This case should ideally not happen if toolInfo was found, but handle defensively
+          throw new Error(`Server config for server ${serverId} not found for tool '${toolName}' in session ${sessionId}, despite tool being registered.`);
       }
     }
-    connectedClients.clear();
+
+    try {
+      // Execute the tool via MCP using the session-specific client
+      console.log(`[McpManager] Executing tool ${toolName} via server ${serverId} for session ${sessionId}`);
+      // Use callTool with a single object argument containing name and arguments
+      const result = await client.callTool({ name: toolName, arguments: args }); // Pass object { name, arguments }
+      return result;
+    } catch (error) {
+      console.error(`[McpManager] Error executing tool ${toolName} for session ${sessionId}:`, error);
+      throw error; // Re-throw the execution error
+    }
+  };
+
+  // Fetch servers from registry (Does NOT register them)
+  const fetchRegistryServers = async (): Promise<ServerConfig[]> => {
+    if (!registryClient) {
+      console.log("[McpManager] Registry client not configured. Cannot fetch registry servers.");
+      return [];
+    }
+    try {
+      console.log("[McpManager] Fetching servers from central registry...");
+      const servers = await registryClient.getServers();
+      console.log(`[McpManager] Fetched ${servers.length} servers from registry.`);
+      // Map registry format to ServerConfig, ensuring required fields are present
+      return servers.map(s => ({
+          id: s.id, // Assuming registry provides a unique ID
+          name: s.name || s.id, // Fallback name if needed
+          url: s.url, // Assuming registry provides the correct SSE URL
+          description: s.description,
+          tags: s.tags,
+          verified: s.verified,
+          rating: s.rating,
+          types: s.types,
+          // Add other fields if needed
+      })).filter(s => s.url); // Ensure URL is present
+    } catch (error) {
+      console.error("[McpManager] Error fetching servers from registry:", error);
+      return []; // Return empty on error
+    }
   };
 
   // Return the MCP manager interface
   return {
+    registerServer,
+    unregisterServer,
+    getAvailableServers,
     discoverTools,
     executeToolCall,
-    registerServer,
     fetchRegistryServers,
-    getAvailableServers,
-    cleanup,
   };
 }

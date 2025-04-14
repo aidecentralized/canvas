@@ -42,9 +42,8 @@ export class RegistryClient {
       const response = await axios.get(`${this.baseUrl}/api/v1/servers/`, {
         headers,
         params: {
-          // We can add params here for filtering if needed
-          // verified: true,
-          // types: 'tool',
+          // Filtering parameters can be added here if the registry API supports them
+          // e.g., verified: true, types: 'tool', tags: 'weather', etc.
         },
       });
 
