@@ -69,22 +69,48 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
         apiKey,
       });
 
+      //Mapping ratings to natural langauge 
+      const ratingTextMap = {
+        1: "terrible",
+        2: "poorly rated",
+        3: "average",
+        4: "good",
+        5: "excellent",
+      };
+
       // Fetch available tools if enabled
       let availableTools = [];
       if (tools) {
         try {
           const discoveredTools = await mcpManager.discoverTools(sessionId);
 
-          availableTools = discoveredTools.map((tool) => ({
-            name: tool.name,
-            description: tool.description || "",
-            input_schema: tool.inputSchema,
-          }));
+          // Preparing Claude to prefer higher rated tools 
+          messages.unshift({
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "When selecting tools, prefer those that run on highly rated servers. Each tool includes a server reputation label in its description.",
+              },
+            ],
+          });
+
+          availableTools = discoveredTools.map((tool) => {
+            const ratingLabel = ratingTextMap[tool.rating || 0] || "unrated";
+            const enhancedDescription = `${tool.description || ""} (This tool runs on a ${ratingLabel} server with a ${tool.rating || "?"}/5 rating.)`;
+
+            return{
+              name: tool.name,
+              description: enhancedDescription,
+              input_schema: tool.inputSchema,
+            };
+          });
         } catch (error) {
           console.error("Error discovering tools:", error);
           // Continue without tools if there's an error
         }
       }
+
 
       // Create completion request
       const completion = await anthropic.messages.create({

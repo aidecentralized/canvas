@@ -122,6 +122,7 @@ export function setupMcpManager(io: SocketIoServer, registryUrl?: string, regist
         toolRegistry.registerTools(
           serverConfig.id, 
           serverConfig.name,
+          serverConfig.rating ?? 0,
           client, 
           toolsResult.tools
         );

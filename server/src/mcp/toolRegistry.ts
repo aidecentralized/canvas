@@ -26,12 +26,13 @@ interface ToolInfo {
   client: Client;
   tool: Tool;
   credentialRequirements?: CredentialRequirement[];
+  rating?: number;
 }
 
 export class ToolRegistry {
   private tools: Map<string, ToolInfo> = new Map();
 
-  registerTools(serverId: string, serverName: string, client: Client, tools: Tool[]): void {
+  registerTools(serverId: string, serverName: string, rating: number, client: Client, tools: Tool[]): void {
     console.log(`ToolRegistry: Registering ${tools.length} tools from server ID: ${serverId}`);
     
     for (const tool of tools) {
@@ -73,7 +74,8 @@ export class ToolRegistry {
         serverName,
         client,
         tool,
-        credentialRequirements
+        credentialRequirements, 
+        rating
       });
       
       console.log(`ToolRegistry: Registered tool ${tool.name} with credentials: ${credentialRequirements ? JSON.stringify(credentialRequirements) : 'none'}`);
@@ -89,7 +91,9 @@ export class ToolRegistry {
       name: info.tool.name,
       description: info.tool.description,
       inputSchema: info.tool.inputSchema,
-      credentialRequirements: info.credentialRequirements
+      credentialRequirements: info.credentialRequirements,
+      serverId: info.serverId,
+      rating: info.rating ?? 0
     }));
     
     console.log(`ToolRegistry: getAllTools returning ${tools.length} tools`);

@@ -7,6 +7,8 @@ export interface ToolInfo {
   description?: string;
   inputSchema: any;
   credentialRequirements?: CredentialRequirement[];
+  serverId?: string;  
+  rating?: number;   
 }
 
 export interface CredentialRequirement {
@@ -64,4 +66,5 @@ export interface ServerConfig {
   id: string;
   name: string;
   url: string;
+  rating?: number;
 }
