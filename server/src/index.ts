@@ -12,7 +12,7 @@ import { SessionManager } from "./mcp/sessionManager.js"; // Import SessionManag
 config();
 
 // Registry settings
-const REGISTRY_URL = process.env.REGISTRY_URL; // Allow override, can be undefined
+const REGISTRY_URL = process.env.REGISTRY_URL || "https://nanda-registry.com"; // Allow override, can be undefined
 const REGISTRY_API_KEY = process.env.REGISTRY_API_KEY;
 
 // Client URL setting
@@ -48,7 +48,12 @@ const io = new SocketIoServer(server, {
 const sessionManager = new SessionManager();
 
 // Initialize MCP Manager with SessionManager and registry URL/Key
-const mcpManager = setupMcpManager(io, sessionManager, REGISTRY_URL, REGISTRY_API_KEY);
+const mcpManager = setupMcpManager(
+  io,
+  sessionManager,
+  REGISTRY_URL,
+  REGISTRY_API_KEY
+);
 
 // Setup routes, passing both managers
 setupRoutes(app, mcpManager, sessionManager); // Pass sessionManager
