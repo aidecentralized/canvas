@@ -1,5 +1,5 @@
 // client/src/components/SettingsModal.tsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Modal,
   ModalOverlay,
@@ -51,6 +51,7 @@ import {
 } from "@chakra-ui/react";
 import { FaEye, FaEyeSlash, FaPlus, FaExternalLinkAlt, FaSync, FaTrash, FaSearch } from "react-icons/fa";
 import { useSettingsContext } from "../contexts/SettingsContext";
+import { debounce } from "lodash";
 
 // Define the types locally instead of importing from a non-existent file
 interface CredentialRequirement {
@@ -536,16 +537,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const loadRegistryServers = async () => {
     setIsLoadingRegistry(true);
     try {
-      const result = await refreshRegistry();
+      // If there's a search query, pass it to refreshRegistry
+      const result = await refreshRegistry(searchQuery);
       if (result && result.servers) {
         setRegistryServers(result.servers);
-        toast({
-          title: "Registry servers loaded",
-          description: `Found ${result.servers.length} servers in the registry`,
-          status: "success",
-          duration: 3000,
-          isClosable: true,
-        });
+        
+        // Only show green success notification for popular servers (not for search)
+        if (!searchQuery) {
+          toast({
+            title: "Registry servers loaded",
+            description: result.message || `Found ${result.servers.length} servers in the registry`,
+            status: "success",
+            duration: 3000,
+            isClosable: true,
+          });
+        } else {
+          // For search results, just update UI without success toast
+          console.log(`Found ${result.servers.length} servers matching "${searchQuery}"`);
+        }
       }
     } catch (error) {
       toast({
@@ -559,6 +568,23 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       setIsLoadingRegistry(false);
     }
   };
+
+  // Debounced search handler
+  const debouncedSearchHandler = useCallback(
+    debounce(() => {
+      if (searchQuery && searchQuery.length >= 2) {
+        loadRegistryServers();
+      }
+    }, 500),
+    [searchQuery]
+  );
+
+  // Effect to trigger search when query changes
+  useEffect(() => {
+    if (searchQuery && searchQuery.length >= 2) {
+      debouncedSearchHandler();
+    }
+  }, [searchQuery, debouncedSearchHandler]);
 
   // Check if a server is already added
   const isServerAdded = (serverId: string) => {

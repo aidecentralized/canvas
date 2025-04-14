@@ -2,6 +2,7 @@
 import { Express, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { McpManager } from "./mcp/manager.js";
+import { RegistryClient } from "./registry/client.js";
 
 export function setupRoutes(app: Express, mcpManager: McpManager): void {
   // Session endpoint
@@ -333,5 +334,66 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
     console.log("API: /api/servers GET called");
     const servers = mcpManager.getAvailableServers();
     res.json({ servers });
+  });
+
+  // Registry refresh endpoint
+  app.post("/api/registry/refresh", async (req: Request, res: Response) => {
+    console.log("API: /api/registry/refresh called");
+    try {
+      // Create registry client and fetch popular servers
+      const registryClient = new RegistryClient();
+      const servers = await registryClient.getPopularServers();
+      
+      console.log(`Fetched ${servers.length} popular servers from Nanda Registry`);
+      
+      res.json({ 
+        success: true,
+        servers,
+        message: `Found ${servers.length} servers in the registry` 
+      });
+    } catch (error) {
+      console.error("Error refreshing registry servers:", error);
+      res.status(500).json({
+        error: error.message || "An error occurred while refreshing registry servers"
+      });
+    }
+  });
+
+  // Registry search endpoint
+  app.get("/api/registry/search", async (req: Request, res: Response) => {
+    console.log("API: /api/registry/search called with query:", req.query);
+    try {
+      const query = req.query.q as string;
+      
+      if (!query) {
+        return res.status(400).json({ 
+          error: "Search query is required" 
+        });
+      }
+      
+      // Create registry client and search for servers
+      const registryClient = new RegistryClient();
+      const servers = await registryClient.searchServers(query, {
+        limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
+        page: req.query.page ? parseInt(req.query.page as string) : undefined,
+        tags: req.query.tags as string,
+        type: req.query.type as string,
+        verified: req.query.verified ? req.query.verified === 'true' : undefined
+      });
+      
+      console.log(`Found ${servers.length} servers matching query "${query}"`);
+      
+      res.json({ 
+        success: true,
+        servers,
+        query,
+        message: `Found ${servers.length} servers matching "${query}"` 
+      });
+    } catch (error) {
+      console.error("Error searching registry servers:", error);
+      res.status(500).json({
+        error: error.message || "An error occurred while searching registry servers"
+      });
+    }
   });
 }

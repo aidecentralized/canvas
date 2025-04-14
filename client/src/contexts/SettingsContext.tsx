@@ -51,7 +51,7 @@ interface SettingsContextProps {
   nandaServers: ServerConfig[];
   registerNandaServer: (server: ServerConfig) => void;
   removeNandaServer: (id: string) => void;
-  refreshRegistry: () => Promise<any>;
+  refreshRegistry: (searchQuery?: string) => Promise<any>;
   getToolsWithCredentialRequirements: () => Promise<ToolCredentialInfo[]>;
   setToolCredentials: (
     toolName: string,
@@ -315,12 +315,20 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
   );
 
   // Refresh servers from registry
-  const refreshRegistry = useCallback(async () => {
+  const refreshRegistry = useCallback(async (searchQuery?: string) => {
     try {
+      // If there's a search query, use the search endpoint
+      const endpoint = searchQuery 
+        ? `${API_BASE_URL}/api/registry/search?q=${encodeURIComponent(searchQuery)}`
+        : `${API_BASE_URL}/api/registry/refresh`;
+      
+      const method = searchQuery ? "GET" : "POST";
+      console.log(`Fetching servers from ${endpoint} with method ${method}`);
+      
       const response = await fetch(
-        `${API_BASE_URL}/api/registry/refresh`,
+        endpoint,
         {
-          method: "POST",
+          method,
           headers: {
             "Content-Type": "application/json",
           },
@@ -330,14 +338,14 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(
-          errorData.error || "Failed to refresh servers from registry"
+          errorData.error || "Failed to fetch servers from registry"
         );
       }
 
       const data = await response.json();
       return data;
     } catch (error) {
-      console.error("Error refreshing servers from registry:", error);
+      console.error("Error fetching servers from registry:", error);
       throw error;
     }
   }, []);

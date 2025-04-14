@@ -20,74 +20,174 @@ interface RegistryServerResponse {
   logo_url: string;
 }
 
+// Interface for server configurations
+export interface RegistryServer {
+  id: string;
+  name: string;
+  url: string;
+  description?: string;
+  types?: string[];
+  tags?: string[];
+  verified?: boolean;
+  rating?: number;
+}
+
 export class RegistryClient {
   private baseUrl: string;
   private apiKey?: string;
 
-  constructor(config: RegistryConfig) {
-    this.baseUrl = config.url;
-    this.apiKey = config.apiKey;
+  constructor(baseUrl: string = 'https://nanda-registry.com', apiKey?: string) {
+    this.baseUrl = baseUrl;
+    this.apiKey = apiKey;
   }
 
   /**
-   * Fetches available MCP servers from the registry
+   * Get popular servers from the registry
    */
-  async getServers(): Promise<ServerConfig[]> {
+  async getPopularServers(limit: number = 50): Promise<RegistryServer[]> {
     try {
-      const headers: Record<string, string> = {};
-      if (this.apiKey) {
-        headers["Authorization"] = `Bearer ${this.apiKey}`;
-      }
-
-      const response = await axios.get(`${this.baseUrl}/api/v1/servers/`, {
-        headers,
-        params: {
-          // We can add params here for filtering if needed
-          // verified: true,
-          // types: 'tool',
-        },
+      console.log(`Fetching popular servers from registry with limit ${limit}`);
+      const response = await axios.get(`${this.baseUrl}/api/v1/discovery/popular/`, {
+        params: { limit },
+        headers: this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {}
       });
-
-      console.log("Response from registry:", response.data.data);
-
-      // Extract server information from the response
-      const servers = response.data.data || [];
-
-      // Filter to include only servers with valid SSE URLs
-      // Exclude GitHub URLs as they're likely just source code repos
-      return servers
-        .filter((server: RegistryServerResponse) => {
-          return (
-            server.url &&
-            server.url.trim() !== "" &&
-            !server.url.includes("github.com") &&
-            !server.url.includes("gitlab.com")
-          );
-        })
-        .map((server: RegistryServerResponse) => {
-          let url = server.url;
-          if (url.endsWith("/")) {
-            url = url.slice(0, -1);
-          }
-          // remove sse if it is present in the url
-          if (url.endsWith("/sse")) {
-            url = url.slice(0, -4);
-          }
-          return {
-            id: server.id,
-            name: server.name,
-            url: url + "/sse",
-            description: server.description,
-            types: server.types,
-            tags: server.tags,
-            verified: server.verified,
-            rating: server.rating,
-          };
-        });
+      
+      console.log(`Registry returned data structure:`, Object.keys(response.data));
+      return this.processServerResponse(response.data);
     } catch (error) {
-      console.error("Error fetching servers from registry:", error);
+      console.error('Error fetching popular servers from registry:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Response status:', error.response?.status);
+        console.error('Response headers:', error.response?.headers);
+        if (error.response?.data) {
+          console.error('Response data:', JSON.stringify(error.response.data).substring(0, 500));
+        }
+      }
       return [];
     }
+  }
+
+  /**
+   * Search for servers in the registry
+   */
+  async searchServers(query: string, options: {
+    limit?: number,
+    page?: number,
+    tags?: string,
+    type?: string,
+    verified?: boolean
+  } = {}): Promise<RegistryServer[]> {
+    try {
+      console.log(`Searching registry for "${query}" with options:`, options);
+      const response = await axios.get(`${this.baseUrl}/api/v1/discovery/search/`, {
+        params: {
+          q: query,
+          limit: options.limit || 50,
+          page: options.page || 1,
+          tags: options.tags,
+          type: options.type,
+          verified: options.verified
+        },
+        headers: this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {}
+      });
+      
+      console.log(`Registry search returned data structure:`, Object.keys(response.data));
+      return this.processServerResponse(response.data);
+    } catch (error) {
+      console.error('Error searching servers in registry:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Response status:', error.response?.status);
+        console.error('Response headers:', error.response?.headers);
+        if (error.response?.data) {
+          console.error('Response data:', JSON.stringify(error.response.data).substring(0, 500));
+        }
+      }
+      return [];
+    }
+  }
+
+  /**
+   * Get servers from the registry - tries search first, falls back to popular
+   */
+  async getServers(query?: string, options: any = {}): Promise<RegistryServer[]> {
+    if (query) {
+      const results = await this.searchServers(query, options);
+      if (results.length > 0) {
+        return results;
+      }
+    }
+    
+    // Fall back to popular servers if search returned no results
+    return this.getPopularServers(options.limit);
+  }
+
+  /**
+   * Process and format server response from registry
+   */
+  private processServerResponse(data: any): RegistryServer[] {
+    console.log("Processing server response");
+    
+    // Check if data is empty
+    if (!data) {
+      console.warn('Empty response from registry');
+      return [];
+    }
+    
+    // Check if the response has a data property (actual response format)
+    if (data.data && Array.isArray(data.data)) {
+      console.log(`Found ${data.data.length} servers in data property`);
+      return data.data
+        .filter(server => server && server.id && server.name && server.url)
+        .map(this.formatServerData);
+    }
+    
+    // Check for pagination structure in search results
+    if (data.pagination && data.data && Array.isArray(data.data)) {
+      console.log(`Found ${data.data.length} servers in paginated data`);
+      return data.data
+        .filter(server => server && server.id && server.name && server.url)
+        .map(this.formatServerData);
+    }
+    
+    // Check if the response is already an array
+    if (Array.isArray(data)) {
+      console.log(`Found ${data.length} servers in direct array`);
+      return data
+        .filter(server => server && server.id && server.name && server.url)
+        .map(this.formatServerData);
+    }
+    
+    // If we can't identify the structure, log and return empty array
+    console.warn('Unknown response format from registry:', JSON.stringify(data).substring(0, 200));
+    return [];
+  }
+  
+  /**
+   * Format server data consistently
+   */
+  private formatServerData = (server: any): RegistryServer => {
+    let url = server.url;
+    
+    // Clean URL (remove trailing slashes)
+    if (url && url.endsWith('/')) {
+      url = url.slice(0, -1);
+    }
+    
+    // Ensure the URL has /sse suffix for MCP compatibility
+    if (url && !url.endsWith('/sse')) {
+      url = `${url}/sse`;
+    }
+    
+    return {
+      id: server.id,
+      name: server.name,
+      url,
+      description: server.description,
+      types: server.types,
+      tags: server.tags,
+      verified: server.verified,
+      rating: server.rating
+    };
   }
 
   /**
