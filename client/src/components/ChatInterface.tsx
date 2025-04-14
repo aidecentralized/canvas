@@ -11,6 +11,7 @@ import {
   Badge,
   Tooltip,
   Divider,
+  Image,
 } from "@chakra-ui/react";
 import { FaRobot, FaUser, FaTools, FaRegLightbulb } from "react-icons/fa";
 import { useChatContext } from "../contexts/ChatContext";
@@ -66,28 +67,23 @@ const ChatInterface: React.FC = () => {
         justify="space-between"
       >
         <Flex align="center">
-          <Box 
-            bg="primary.500" 
-            borderRadius="lg" 
-            p={2} 
+          <Image 
+            src="/NANDA.png" 
+            alt="NANDA Logo" 
+            boxSize="32px" 
             mr={3}
-            boxShadow="0 2px 10px rgba(90, 26, 255, 0.4)"
+            display="inline-block"
+            verticalAlign="middle"
+          />
+          <Text 
+            fontWeight="bold" 
+            fontSize="lg"
+            lineHeight="32px"
+            display="inline-flex"
+            alignItems="center"
           >
-            <Icon as={FaRobot} boxSize={5} color="white" />
-          </Box>
-          <Text fontWeight="bold" fontSize="lg">
-            Nanda Chat Interface <Text as="span" fontSize="xs" color="green.300">[v2]</Text>
+            NANDA Chat Interface
           </Text>
-          <Badge 
-            ml={3} 
-            colorScheme="purple" 
-            variant="subtle" 
-            borderRadius="full" 
-            px={2} 
-            fontSize="xs"
-          >
-            AI Powered
-          </Badge>
         </Flex>
       </Flex>
 
@@ -127,40 +123,20 @@ const ChatInterface: React.FC = () => {
               textAlign="center"
               color="whiteAlpha.800"
             >
-              <Box 
-                bg="rgba(90, 26, 255, 0.1)" 
-                p={5} 
-                borderRadius="full" 
+              <Icon 
+                as={FaTools} 
+                boxSize={16} 
+                color="primary.400" 
                 mb={6}
-                boxShadow="0 5px 20px rgba(90, 26, 255, 0.2)"
-              >
-                <Icon as={FaTools} boxSize={10} color="primary.400" />
-              </Box>
+              />
               <Text fontSize="2xl" fontWeight="bold" mb={3} bgGradient="linear(to-r, primary.300, secondary.300)" bgClip="text">
-                Welcome to Nanda Chat Interface
+                Welcome to NANDA Chat Interface
               </Text>
               <Text mb={6} maxW="md" lineHeight="tall">
-                This AI uses the Nanda Protocol to enhance capabilities with
+                This AI uses the NANDA Protocol to enhance capabilities with
                 tools. Ask me anything, and I'll try to help by using my
                 intelligence and other tools and knowledge.
               </Text>
-              <VStack spacing={2} align="stretch" maxW="sm">
-                <Text fontWeight="semibold" mb={1} display="flex" alignItems="center">
-                  <Icon as={FaRegLightbulb} mr={2} color="secondary.300" /> Try asking:
-                </Text>
-                <Button
-                  size="md"
-                  variant="outline"
-                  mb={2}
-                  borderColor="primary.400"
-                  color="primary.300"
-                  _hover={{ bg: "rgba(90, 26, 255, 0.1)" }}
-                  borderRadius="full"
-                  boxShadow="0 2px 5px rgba(0, 0, 0, 0.1)"
-                >
-                  "What tools do you have available?"
-                </Button>
-              </VStack>
             </Flex>
           ) : (
             messages.map((message, index) => (
@@ -205,16 +181,20 @@ const ChatInterface: React.FC = () => {
                     <Flex
                       align="center"
                       justify="center"
-                      bg={message.role === "user" ? "white" : "primary.500"}
-                      color={message.role === "user" ? "primary.500" : "white"}
                       boxSize="24px"
-                      borderRadius="full"
                       mr={2}
                     >
-                      <Icon
-                        as={message.role === "user" ? FaUser : FaRobot}
-                        boxSize={3}
-                      />
+                      {message.role === "user" ? (
+                        <Icon as={FaUser} boxSize={3} color="primary.500" />
+                      ) : (
+                        <Image 
+                          src="/NANDA.png" 
+                          alt="NANDA Logo" 
+                          boxSize="18px"
+                          display="inline-block"
+                          verticalAlign="middle"
+                        />
+                      )}
                     </Flex>
                   </Tooltip>
                   <Text fontWeight="bold" fontSize="sm">
@@ -269,13 +249,16 @@ const ChatInterface: React.FC = () => {
                 <Flex
                   align="center"
                   justify="center"
-                  bg="primary.500"
-                  color="white"
                   boxSize="24px"
-                  borderRadius="full"
                   mr={2}
                 >
-                  <Icon as={FaRobot} boxSize={3} />
+                  <Image 
+                    src="/NANDA.png" 
+                    alt="NANDA Logo" 
+                    boxSize="18px"
+                    display="inline-block"
+                    verticalAlign="middle"
+                  />
                 </Flex>
                 <Text fontWeight="bold">Assistant</Text>
               </Flex>
@@ -325,7 +308,7 @@ const ChatInterface: React.FC = () => {
         </VStack>
 
         {/* Activity Log Panel */}
-        <Box width="300px" bg="dark.500" p={2} borderLeft="1px solid" borderColor="gray.700">
+        <Box width="300px" bg="#25201F" p={2} borderLeft="1px solid" borderColor="#583030">
           <ActivityLog />
         </Box>
       </Flex>

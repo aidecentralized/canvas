@@ -34,37 +34,42 @@ const getLogIcon = (type: LogEntry['type']) => {
 const getLogColor = (type: LogEntry['type']) => {
   switch (type) {
     case 'server-selection':
-      return 'blue';
+      return '#547AA5';
     case 'tool-execution':
-      return 'green';
+      return '#4A6B52';
     case 'error':
-      return 'red';
+      return '#8B3A4A';
     case 'info':
     default:
-      return 'purple';
+      return '#7E5A8E';
   }
 };
 
 const LogEntryItem: React.FC<{ log: LogEntry }> = ({ log }) => {
   const { isOpen, onToggle } = useDisclosure();
-  const iconColor = `${getLogColor(log.type)}.400`;
-  const bgColor = `${getLogColor(log.type)}.900`;
-  const borderColor = `${getLogColor(log.type)}.700`;
+  const colorMap = {
+    'server-selection': { icon: '#7EAFD8', bg: '#1A2A3A', border: '#3B5D7D' },
+    'tool-execution': { icon: '#6CAC70', bg: '#1A2A20', border: '#3E5A43' },
+    'error': { icon: '#BC6C78', bg: '#2A1F24', border: '#8B3A4A' },
+    'info': { icon: '#B79EC0', bg: '#25202A', border: '#6C5A78' }
+  };
+  
+  const style = colorMap[log.type] || colorMap.info;
   
   return (
     <Box
       p={3}
       borderRadius="md"
-      bg={bgColor}
-      borderLeft={`3px solid ${borderColor}`}
+      bg={style.bg}
+      borderLeft={`3px solid ${style.border}`}
       mb={2}
       opacity={0.9}
-      _hover={{ opacity: 1 }}
+      _hover={{ opacity: 1, bg: `${style.bg}` }}
       transition="all 0.2s"
     >
       <Flex justify="space-between" align="center" onClick={onToggle} cursor="pointer">
         <Flex align="center">
-          <Icon as={getLogIcon(log.type)} color={iconColor} mr={2} />
+          <Icon as={getLogIcon(log.type)} color={style.icon} mr={2} />
           <Text fontSize="sm" fontWeight="medium">
             {log.message}
           </Text>
@@ -73,12 +78,12 @@ const LogEntryItem: React.FC<{ log: LogEntry }> = ({ log }) => {
           <Text fontSize="xs" color="whiteAlpha.700" mr={2}>
             {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </Text>
-          <Icon as={isOpen ? FaAngleUp : FaAngleDown} />
+          <Icon as={isOpen ? FaAngleUp : FaAngleDown} color={style.icon} />
         </Flex>
       </Flex>
       
       <Collapse in={isOpen} animateOpacity>
-        <Box mt={3} fontSize="xs" bg="rgba(0,0,0,0.3)" p={2} borderRadius="sm">
+        <Box mt={3} fontSize="xs" bg="rgba(0,0,0,0.5)" p={2} borderRadius="sm">
           {log.details && (
             <VStack align="stretch" spacing={1}>
               {Object.entries(log.details).map(([key, value]) => (
@@ -109,8 +114,8 @@ const ActivityLog: React.FC = () => {
       width="100%"
       borderRadius="md"
       overflow="hidden"
-      background="linear-gradient(to bottom, rgba(30, 30, 50, 0.9), rgba(20, 20, 35, 0.9))"
-      borderColor="gray.700"
+      background="linear-gradient(to bottom, rgba(30, 20, 20, 0.9), rgba(20, 15, 15, 0.95))"
+      borderColor="#583030"
       borderWidth="1px"
     >
       <Flex 
@@ -118,23 +123,24 @@ const ActivityLog: React.FC = () => {
         justify="space-between" 
         align="center" 
         borderBottomWidth="1px" 
-        borderBottomColor="gray.700"
-        bg="gray.800"
+        borderBottomColor="#583030"
+        bg="#2A1F21"
       >
         <Flex align="center" onClick={onToggle} cursor="pointer">
-          <Heading size="sm" fontWeight="medium">
+          <Heading size="sm" fontWeight="medium" color="#AA5C5C">
             Activity Log
           </Heading>
-          <Badge ml={2} colorScheme="purple">
+          <Badge ml={2} colorScheme="red" bg="#8B3A4A" color="white">
             {activityLogs.length}
           </Badge>
-          <Icon ml={2} as={isOpen ? FaAngleUp : FaAngleDown} />
+          <Icon ml={2} as={isOpen ? FaAngleUp : FaAngleDown} color="#AA5C5C" />
         </Flex>
         <Tooltip label="Clear logs">
           <Button 
             size="xs" 
             variant="ghost" 
-            colorScheme="red" 
+            color="#BC6C78"
+            _hover={{ bg: "rgba(139, 58, 74, 0.2)" }}
             leftIcon={<Icon as={FaTrash} />}
             onClick={clearLogs}
           >
@@ -153,19 +159,19 @@ const ActivityLog: React.FC = () => {
               width: "6px",
             },
             "&::-webkit-scrollbar-track": {
-              background: "rgba(0, 0, 0, 0.1)",
+              background: "rgba(0, 0, 0, 0.2)",
             },
             "&::-webkit-scrollbar-thumb": {
-              background: "rgba(255, 255, 255, 0.15)",
+              background: "rgba(139, 58, 74, 0.3)",
               borderRadius: "3px",
               "&:hover": {
-                background: "rgba(255, 255, 255, 0.25)",
+                background: "rgba(139, 58, 74, 0.5)",
               },
             },
           }}
         >
           {activityLogs.length === 0 ? (
-            <Text color="gray.500" fontSize="sm" textAlign="center" p={4}>
+            <Text color="#AA5C5C" fontSize="sm" textAlign="center" p={4}>
               No activity logged yet
             </Text>
           ) : (

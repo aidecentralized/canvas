@@ -687,7 +687,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 color="whiteAlpha.800"
                 _hover={{ color: "white" }}
               >
-                Nanda Servers
+                NANDA Servers
               </Tab>
               <Tab
                 _selected={{ 
@@ -804,12 +804,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 </VStack>
               </TabPanel>
 
-              {/* Nanda Servers Tab */}
+              {/* NANDA Servers Tab */}
               <TabPanel>
                 <VStack spacing={4} align="stretch">
                   <Box>
                     <Heading size="sm" mb={3} color="whiteAlpha.900">
-                      Registered Nanda Servers
+                      Registered NANDA Servers
                     </Heading>
                     {nandaServers.length === 0 ? (
                       <Text color="whiteAlpha.600">No servers registered yet</Text>
