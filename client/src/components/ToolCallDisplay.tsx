@@ -3,8 +3,8 @@ import React from "react";
 import {
   Box,
   Text,
-  Flex,
   Icon,
+  Flex,
   Badge,
   Accordion,
   AccordionItem,
@@ -12,13 +12,15 @@ import {
   AccordionPanel,
   AccordionIcon,
 } from "@chakra-ui/react";
-import { FaTools, FaCheck, FaExclamationTriangle } from "react-icons/fa";
+import { FaTools, FaCheckCircle, FaTimesCircle } from "react-icons/fa";
 
 interface ToolCallProps {
   toolCall: {
     id: string;
     name: string;
     input: any;
+    serverId?: string;
+    serverName?: string;
     result?: {
       content: any[];
       isError?: boolean;
@@ -27,67 +29,102 @@ interface ToolCallProps {
 }
 
 const ToolCallDisplay: React.FC<ToolCallProps> = ({ toolCall }) => {
-  const { name, input, result } = toolCall;
-
+  const { name, input, result, serverId, serverName } = toolCall;
   const hasResult = !!result;
-  const isError = result?.isError || false;
+  const isError = result?.isError;
 
   return (
     <Box
-      mb={3}
-      borderRadius="md"
-      bg="rgba(0, 0, 0, 0.15)"
-      borderLeft="3px solid"
-      borderLeftColor={
-        hasResult ? (isError ? "red.500" : "green.400") : "yellow.400"
-      }
+      mt={2}
+      borderRadius="lg"
       overflow="hidden"
     >
-      <Accordion allowToggle defaultIndex={hasResult ? [] : [0]}>
-        <AccordionItem border="none">
-          <AccordionButton py={2} px={3} _hover={{ bg: "rgba(0, 0, 0, 0.1)" }}>
-            <Flex flex="1" align="center">
-              <Icon as={FaTools} mr={2} color="crimson.300" />
-              <Text fontWeight="bold" mr={2}>
-                {name}
-              </Text>
-              <Badge
-                colorScheme={!hasResult ? "yellow" : isError ? "red" : "green"}
-                display="flex"
+      <Accordion allowToggle>
+        <AccordionItem 
+          border="none"
+          bg="rgba(0, 0, 0, 0.2)"
+          borderRadius="lg"
+          overflow="hidden"
+          boxShadow="0 2px 8px rgba(0, 0, 0, 0.15)"
+          mb={1}
+        >
+          <AccordionButton
+            p={3}
+            _hover={{ bg: "rgba(90, 26, 255, 0.1)" }}
+            borderRadius="lg"
+          >
+            <Flex flex="1" alignItems="center">
+              <Flex
                 alignItems="center"
+                justifyContent="center"
+                bg="rgba(90, 26, 255, 0.2)"
+                p={2}
+                borderRadius="md"
+                mr={3}
               >
-                {!hasResult ? (
-                  "Pending"
-                ) : isError ? (
-                  <>
-                    <Icon as={FaExclamationTriangle} boxSize={3} mr={1} />
-                    Error
-                  </>
-                ) : (
-                  <>
-                    <Icon as={FaCheck} boxSize={3} mr={1} />
-                    Success
-                  </>
+                <Icon as={FaTools} color="primary.300" />
+              </Flex>
+              <Box>
+                <Flex alignItems="center">
+                  <Text fontWeight="bold" mr={2}>
+                    Using tool: {name}
+                  </Text>
+                  {hasResult && (
+                    <Badge
+                      colorScheme={isError ? "red" : "green"}
+                      variant="subtle"
+                      borderRadius="full"
+                      px={2}
+                      display="flex"
+                      alignItems="center"
+                    >
+                      <Icon
+                        as={isError ? FaTimesCircle : FaCheckCircle}
+                        mr={1}
+                        fontSize="xs"
+                      />
+                      {isError ? "Failed" : "Success"}
+                    </Badge>
+                  )}
+                </Flex>
+                {!hasResult && (
+                  <Text fontSize="xs" color="whiteAlpha.700">
+                    Click to see details
+                  </Text>
                 )}
-              </Badge>
+              </Box>
             </Flex>
             <AccordionIcon />
           </AccordionButton>
 
-          <AccordionPanel bg="rgba(0, 0, 0, 0.2)" p={3}>
+          <AccordionPanel 
+            bg="rgba(0, 0, 0, 0.3)" 
+            p={4} 
+            borderTop="1px solid rgba(255, 255, 255, 0.05)"
+          >
             {/* Input */}
-            <Box mb={hasResult ? 3 : 0}>
-              <Text fontWeight="semibold" mb={1} fontSize="sm" color="gray.300">
-                Input:
+            <Box mb={hasResult ? 4 : 0}>
+              <Text 
+                fontWeight="600" 
+                mb={2} 
+                fontSize="sm" 
+                color="whiteAlpha.800"
+                textTransform="uppercase"
+                letterSpacing="wider"
+              >
+                Input Parameters:
               </Text>
               <Box
                 as="pre"
-                p={2}
+                p={3}
                 borderRadius="md"
-                bg="rgba(0, 0, 0, 0.3)"
+                bg="rgba(0, 0, 0, 0.4)"
                 fontSize="xs"
                 overflowX="auto"
                 fontFamily="monospace"
+                border="1px solid rgba(255, 255, 255, 0.05)"
+                boxShadow="inset 0 2px 4px rgba(0, 0, 0, 0.2)"
+                color="whiteAlpha.800"
               >
                 {JSON.stringify(input, null, 2)}
               </Box>
@@ -97,27 +134,59 @@ const ToolCallDisplay: React.FC<ToolCallProps> = ({ toolCall }) => {
             {hasResult && (
               <Box>
                 <Text
-                  fontWeight="semibold"
-                  mb={1}
+                  fontWeight="600"
+                  mb={2}
                   fontSize="sm"
-                  color="gray.300"
+                  color="whiteAlpha.800"
+                  textTransform="uppercase"
+                  letterSpacing="wider"
                 >
                   Result:
                 </Text>
                 <Box
-                  p={2}
+                  p={3}
                   borderRadius="md"
-                  bg={isError ? "rgba(255, 0, 0, 0.1)" : "rgba(0, 0, 0, 0.3)"}
+                  bg={isError ? "rgba(220, 38, 38, 0.1)" : "rgba(72, 187, 120, 0.1)"}
                   fontSize="sm"
-                  borderLeft="2px solid"
+                  borderLeft="3px solid"
                   borderLeftColor={isError ? "red.500" : "green.400"}
+                  position="relative"
+                  _before={{
+                    content: '""',
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    bottom: 0,
+                    width: "100%",
+                    bg: isError ? "rgba(220, 38, 38, 0.03)" : "rgba(72, 187, 120, 0.03)",
+                    borderRadius: "md",
+                  }}
                 >
                   {result.content.map((item, idx) => (
-                    <Text key={idx}>
+                    <Text 
+                      key={idx} 
+                      position="relative" 
+                      zIndex={1}
+                      color={isError ? "red.200" : "green.200"}
+                      fontWeight={isError ? "medium" : "normal"}
+                    >
                       {item.type === "text" ? item.text : JSON.stringify(item)}
                     </Text>
                   ))}
                 </Box>
+              </Box>
+            )}
+
+            {/* Server info if available */}
+            {serverId && serverName && (
+              <Box mt={2}>
+                <Text 
+                  fontWeight="600" 
+                  fontSize="xs" 
+                  color="whiteAlpha.700"
+                >
+                  Server: {serverName} ({serverId.substring(0, 8)}...)
+                </Text>
               </Box>
             )}
           </AccordionPanel>

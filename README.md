@@ -2,11 +2,11 @@
 
 MCP Host is a complete end-to-end implementation of a Model Context Protocol (MCP) host with an in-built MCP client. It provides a beautiful, polished chat interface with tool selection capabilities using MCP, and integrates with the MCP Registry for discovering available servers.
 
-![MCP Host Screenshot](/path/to/screenshot.png)
+![MCP Host Screenshot](host_screenshot.png)
 
 ## Features
 
-- **Beautiful Chat Interface**: A clean, modern UI with glassmorphism design and a crimson color theme
+- **Chat Interface**: A modern UI with a glassmorphism design and crimson theme
 - **MCP Client Integration**: Discover and use tools from MCP servers
 - **Registry Integration**: Automatically connect to servers listed in the MCP Registry
 - **Anthropic API Integration**: Powered by Claude, one of the most capable AI assistants
@@ -96,7 +96,7 @@ server.tool("my-tool", { param: z.string() }, async ({ param }) => ({
 const app = express();
 const port = 3001;
 
-// To support multiple simultaneous connections, we use a lookup object
+// To support multiple simultaneous connections, a session-based lookup object is used
 const transports: { [sessionId: string]: SSEServerTransport } = {};
 
 // SSE endpoint

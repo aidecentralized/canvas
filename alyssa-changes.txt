@@ -1,0 +1,21 @@
+1. In docker-compose.yml version is depricated in new format of Docker. Removed this line version: "3.8" from line 1
+
+2. Added .env file with API_BASE_URL as http://localhost:3000
+
+3. In server/src/routes.ts: 
+try {
+      await mcpManager.registerServer({ id, name, url });
+      res.json({ success: true }); <------------------------ this always returns success regardless of outcome 
+    } catch (error) {
+      console.error("Error registering server:", error);
+      res.status(500).json({
+        error:
+          error.message || "An error occurred while registering the server",
+      });
+    }
+  });
+
+  Fix: 
+  A. In server/src/mcp/manager.ts, in registerServer() made a chnage to returned values 
+  B. Changed the receival in routes.ts 
+  C. In client/src/components/SettingsModal.tsx edited handleAddServer

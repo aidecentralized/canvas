@@ -4,11 +4,23 @@ import React, {
   useContext,
   useState,
   useCallback,
-  useEffect, // Import useEffect
-  useRef, // Import useRef
+  useRef,
+  useEffect,
 } from "react";
-import { useSettingsContext } from "./SettingsContext"; // Keep this if needed elsewhere, but apiKey check is removed from sendMessage
+import { useSettingsContext } from "./SettingsContext";
 import { v4 as uuidv4 } from "uuid";
+import { socketService } from "../services/socketService";
+
+// Fix for undefined environment variables
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "";
+
+export interface LogEntry {
+  id: string;
+  timestamp: Date;
+  type: 'server-selection' | 'tool-execution' | 'error' | 'info';
+  message: string;
+  details?: any;
+}
 
 export interface Message {
   id: string;
@@ -23,257 +35,333 @@ export interface Message {
       content: any[];
       isError?: boolean;
     };
+    serverId?: string;
+    serverName?: string;
   }>;
+  isIntermediate?: boolean;
 }
 
 interface ChatContextProps {
   messages: Message[];
   isLoading: boolean;
-  currentInputText: string;
-  setCurrentInputText: (text: string) => void;
+  activityLogs: LogEntry[];
   sendMessage: (content: string) => Promise<void>;
   clearMessages: () => void;
-  /** The current session ID. Null if not yet initialized or cleared. */
-  sessionId: string | null; // Session ID can be null initially
-  /** Function to clear the current session ID from state and local storage. */
-  clearSession: () => void; // Function to clear session
+  clearLogs: () => void;
+  addLogEntry: (type: LogEntry['type'], message: string, details?: any) => void;
 }
 
 const ChatContext = createContext<ChatContextProps>({
   messages: [],
   isLoading: false,
-  currentInputText: "",
-  setCurrentInputText: () => {},
+  activityLogs: [],
   sendMessage: async () => {},
   clearMessages: () => {},
-  sessionId: null, // Default to null
-  clearSession: () => {}, // Default function
+  clearLogs: () => {},
+  addLogEntry: () => {},
 });
 
 export const useChatContext = () => useContext(ChatContext);
-
-// Define API Base URL with a default for deployment
-const API_BASE_URL =
-  process.env.REACT_APP_API_BASE_URL ?? "http://localhost:4000"; // Default to server port
 
 interface ChatProviderProps {
   children: React.ReactNode;
 }
 
-const SESSION_ID_STORAGE_KEY = "sessionId"; // Define key for localStorage
-
 export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [activityLogs, setActivityLogs] = useState<LogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [currentInputText, setCurrentInputText] = useState("");
-  const [sessionId, setSessionId] = useState<string | null>(null); // Session ID state
-  const messagesRef = useRef<Message[]>(messages); // Ref to hold current messages
+  const { apiKey } = useSettingsContext();
+  const settingsContext = useSettingsContext();
+  const fallbackSessionId = useRef<string>(uuidv4());
+  
+  // Get the session ID - use from settings context if available, fallback if not
+  const getSessionId = useCallback(() => {
+    return settingsContext.sessionId || fallbackSessionId.current;
+  }, [settingsContext.sessionId]);
 
-  // Update messagesRef whenever messages state changes
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
-
-  /**
-   * Clears the session ID from React state and browser's local storage.
-   * This typically happens if the backend indicates the session is invalid (e.g., 401 error).
-   * The user might need to refresh the page to get a new session.
-   */
-  const clearSession = useCallback(() => {
-    console.warn("Clearing session ID from state and local storage.");
-    setSessionId(null); // Clear from state
-    localStorage.removeItem(SESSION_ID_STORAGE_KEY); // Clear from storage
-    // Consider adding a user notification here (e.g., via toast)
-    // Optionally clear messages: setMessages([]);
+  // Add log entry
+  const addLogEntry = useCallback((type: LogEntry['type'], message: string, details?: any) => {
+    const newEntry: LogEntry = {
+      id: uuidv4(),
+      timestamp: new Date(),
+      type,
+      message,
+      details,
+    };
+    
+    setActivityLogs(prevLogs => [...prevLogs, newEntry]);
   }, []);
 
-  /**
-   * Effect runs once on component mount to initialize the session ID.
-   * 1. Checks local storage for an existing session ID.
-   * 2. If found, uses it.
-   * 3. If not found, requests a new session ID from the backend's /api/session endpoint.
-   * 4. Stores the obtained session ID in both state and local storage.
-   */
+  // Set up socket.io handler for tool execution updates
   useEffect(() => {
-    const initializeSession = async () => {
-      const storedSessionId = localStorage.getItem(SESSION_ID_STORAGE_KEY);
-      if (storedSessionId) {
-        console.log("Found session ID in storage:", storedSessionId);
-        // Optional: Validate session ID with backend here if needed
-        setSessionId(storedSessionId);
-      } else {
-        console.log("No session ID in storage, requesting new one...");
-        try {
-          // Use relative path '/' as fallback, relying on Nginx proxy
-          const response = await fetch(`${API_BASE_URL}/api/session`, {
-            method: "POST",
-          });
-          if (!response.ok) {
-            throw new Error(`Failed to create session (${response.status})`);
-          }
-          const data = await response.json();
-          if (data.sessionId) {
-            console.log("Received new session ID:", data.sessionId);
-            setSessionId(data.sessionId);
-            localStorage.setItem(SESSION_ID_STORAGE_KEY, data.sessionId);
-          } else {
-            throw new Error("No session ID received from server");
-          }
-        } catch (error) {
-          console.error("Error initializing session:", error);
-          // Handle error appropriately (e.g., show error message)
-        }
+    const handleToolExecution = (data: {
+      toolName: string;
+      serverId: string;
+      serverName: string;
+      result: {
+        content: any[];
+        isError?: boolean;
       }
+    }) => {
+      console.log('Tool execution handler called with data:', data);
+      const { toolName, serverId, serverName, result } = data;
+      
+      // Update message with tool call result
+      setMessages(prevMessages => {
+        console.log('Current messages:', prevMessages);
+        // Find the message with the matching tool call
+        const updatedMessages = prevMessages.map(message => {
+          // Only update assistant messages with tool calls
+          if (message.role === 'assistant' && message.toolCalls) {
+            // Find the tool call that matches this execution
+            const hasMatchingTool = message.toolCalls.some(tc => tc.name === toolName && !tc.result);
+            
+            if (hasMatchingTool) {
+              console.log(`Found message with matching tool: ${toolName}`, message);
+              // Update the tool calls with results
+              const updatedToolCalls = message.toolCalls.map(tc => {
+                if (tc.name === toolName && !tc.result) {
+                  console.log(`Updating tool call with result: ${toolName}`, result);
+                  // Update this tool call with the result
+                  return {
+                    ...tc,
+                    result: {
+                      content: result.content || [],
+                      isError: result.isError || false
+                    },
+                    serverId,
+                    serverName
+                  };
+                }
+                return tc;
+              });
+              
+              return {
+                ...message,
+                toolCalls: updatedToolCalls
+              };
+            }
+          }
+          return message;
+        });
+        
+        console.log('Updated messages:', updatedMessages);
+        return updatedMessages;
+      });
+      
+      addLogEntry('tool-execution', `Tool executed: ${toolName}`, {
+        serverName,
+        serverId,
+        resultSummary: result.content ? JSON.stringify(result.content).substring(0, 100) + '...' : 'No content'
+      });
     };
-    initializeSession();
-  }, []); // Run only on mount
+    
+    console.log('Setting up tool execution handler');
+    // Register handler
+    socketService.addToolExecutionHandler(handleToolExecution);
+    
+    return () => {
+      console.log('Cleaning up tool execution handler');
+      // Clean up
+      socketService.removeToolExecutionHandler(handleToolExecution);
+    };
+  }, [addLogEntry]);
 
   // Process assistant response to extract tool calls
   const processAssistantResponse = useCallback((response: any) => {
+    console.log("Raw response from API:", response);
+    
     const toolCalls = [];
 
     // Check for tool_use items in the content array
     if (response.content && Array.isArray(response.content)) {
       for (const item of response.content) {
         if (item.type === "tool_use") {
+          // Get server info from cache if available
+          const serverInfo = socketService.getServerInfo(item.name);
+          
           toolCalls.push({
             id: item.id,
             name: item.name,
             input: item.input,
+            serverId: serverInfo?.serverId,
+            serverName: serverInfo?.serverName,
+            result: item.result
+          });
+          
+          // Log tool usage
+          addLogEntry('tool-execution', `Tool selected: ${item.name}`, {
+            toolId: item.id,
+            toolName: item.name,
+            inputSummary: JSON.stringify(item.input).substring(0, 100) + (JSON.stringify(item.input).length > 100 ? '...' : '')
           });
         }
       }
     }
 
+    // Log MCP server information if available
+    if (response.serverInfo) {
+      addLogEntry('server-selection', `MCP Server: ${response.serverInfo.id || 'Unknown'}`, response.serverInfo);
+    }
+
+    // If the content isn't already an array, convert it to one
+    const processedContent = Array.isArray(response.content) 
+      ? response.content 
+      : [{ type: "text", text: typeof response.content === "string" 
+            ? response.content 
+            : "Response received in unexpected format" }];
+
     return {
-      content: response.content,
+      content: processedContent,
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     };
-  }, []);
+  }, [addLogEntry]);
 
-  /**
-   * Sends a user message to the backend chat completion endpoint.
-   * Includes the current session ID in the 'X-Session-Id' header.
-   * Handles responses, including potential tool calls and errors.
-   */
+  // Send a message to the assistant
   const sendMessage = useCallback(
     async (messageText: string) => {
-      // Use sessionId state directly
-      if (!sessionId) {
-        console.error("Session ID not available yet. Cannot send message.");
-        // Optionally show a toast or handle this case in the UI component
-        return;
-      }
-      // API key check removed - handled server-side per session
-      const trimmedMessage = messageText.trim();
-      if (!trimmedMessage) {
-        console.warn("Attempted to send an empty message.");
+      if (!apiKey) {
+        console.error("API key not set");
+        // Add error message about missing API key
+        const errorMessage: Message = {
+          id: uuidv4(),
+          role: "assistant",
+          content: {
+            type: "text",
+            text: "Error: Please set your Anthropic API key in the settings (gear icon) before sending messages."
+          },
+          timestamp: new Date(),
+        };
+        
+        addLogEntry('error', 'Missing API key', { requiredSetting: 'API Key' });
+        setMessages((prevMessages) => [...prevMessages, errorMessage]);
         return;
       }
 
-      // Clear input immediately
-      const textToSend = currentInputText; // Capture current input before clearing
-      setCurrentInputText("");
       setIsLoading(true);
-
-      const userMessage: Message = {
-        id: uuidv4(),
-        role: "user",
-        content: [{ type: "text", text: textToSend }], // Ensure content is an array
-        timestamp: new Date(),
-      };
-
-      // Determine the next state of messages using the ref for the most current state
-      const nextMessages = [...messagesRef.current, userMessage];
-
-      // Update the state *after* calculating the next state
-      setMessages(nextMessages);
+      addLogEntry('info', 'Processing message', { messageText: messageText.substring(0, 50) + (messageText.length > 50 ? '...' : '') });
 
       try {
-        // Prepare messages for API using the calculated next state (nextMessages)
-        const apiMessages = nextMessages.map((msg) => ({
+        // Add user message
+        const userMessage: Message = {
+          id: uuidv4(),
+          role: "user",
+          content: { type: "text", text: messageText },
+          timestamp: new Date(),
+        };
+
+        setMessages((prevMessages) => [...prevMessages, userMessage]);
+
+        // Prepare messages for API
+        const apiMessages = [...messages, userMessage].map((msg) => ({
           role: msg.role,
-          // Ensure content is always an array for the API
           content: Array.isArray(msg.content) ? msg.content : [msg.content],
         }));
 
-        // Log the messages being sent to the backend API
-        console.log("Sending messages to backend:", JSON.stringify(apiMessages, null, 2));
-
+        console.log(`Sending message to ${API_BASE_URL}/api/chat/completions with session ID: ${getSessionId()}`);
+        addLogEntry('info', 'Sending request to API', { 
+          endpoint: `${API_BASE_URL}/api/chat/completions`,
+          sessionId: getSessionId()
+        });
+        
+        // Send request to our backend
         const response = await fetch(
-          // Use relative path '/' as fallback, relying on Nginx proxy
           `${API_BASE_URL}/api/chat/completions`,
           {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "X-Session-Id": sessionId, // Use sessionId state
+              "X-API-Key": apiKey,
+              "X-Session-Id": getSessionId() || "",
             },
             body: JSON.stringify({
-              messages: apiMessages, // Send the calculated next state
+              messages: apiMessages,
               tools: true,
             }),
           }
         );
 
-        if (!response.ok) {
-          let errorData = { error: `Failed to send message (${response.status})` };
-          try {
-            errorData = await response.json();
-          } catch (e) {
-             console.warn("Could not parse error response JSON");
-          }
-
-          // Check for specific session errors
-          if (response.status === 401 || (response.status === 400 && errorData.error?.includes("session"))) {
-             clearSession(); // Clear the invalid session
-             throw new Error(errorData.error || "Session invalid. Please refresh the page or try again.");
-          }
-          // Check for Anthropic specific errors passed through
-          if (errorData.error?.includes("Anthropic API Error")) {
-              console.error("Anthropic API Error received from backend:", errorData);
-              throw new Error(errorData.error); // Throw the specific error message
-          }
-          throw new Error(errorData.error || `Failed to send message (${response.status})`);
-        } else {
-          const responseData = await response.json();
-          const { content, toolCalls } = processAssistantResponse(responseData);
-
-          const assistantMessage: Message = {
-            id: uuidv4(),
-            role: "assistant",
-            content,
-            timestamp: new Date(),
-            toolCalls,
-          };
-
-          // Update messages state with the assistant's response
-          // Use functional update here is fine as it's based on the previous state *after* user message was added
-          setMessages((prevMessages) => [...prevMessages, assistantMessage]);
+        // Check the content type before trying to parse JSON
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          // Handle non-JSON response (like HTML error pages)
+          const text = await response.text();
+          console.error("Received non-JSON response:", text.substring(0, 200) + "...");
+          addLogEntry('error', 'Invalid response format', { 
+            contentType,
+            statusCode: response.status,
+            previewText: text.substring(0, 100) + '...'
+          });
+          throw new Error(`Invalid response from server: Not JSON (${response.status} ${response.statusText})`);
         }
 
+        if (!response.ok) {
+          const errorData = await response.json();
+          addLogEntry('error', `Server error: ${response.status}`, errorData);
+          throw new Error(errorData.error || `Server error: ${response.status} ${response.statusText}`);
+        }
+
+        const responseData = await response.json();
+        addLogEntry('info', 'Response received', { 
+          statusCode: response.status,
+          hasTools: responseData.toolsUsed || responseData.content?.some((item: any) => item.type === 'tool_use') || false,
+          serverInfo: responseData.serverInfo || 'Not provided'
+        });
+
+        // Process the response to extract tool calls
+        const { content, toolCalls } = processAssistantResponse(responseData);
+
+        // Process intermediate responses first
+        if (responseData.intermediateResponses && Array.isArray(responseData.intermediateResponses)) {
+          for (const intermediateResponse of responseData.intermediateResponses) {
+            const { content: intermediateContent } = processAssistantResponse(intermediateResponse);
+            const intermediateMessage: Message = {
+              id: uuidv4(),
+              role: "assistant",
+              content: intermediateContent,
+              timestamp: new Date(intermediateResponse.timestamp || Date.now()),
+              isIntermediate: true
+            };
+            setMessages((prevMessages) => [...prevMessages, intermediateMessage]);
+          }
+        }
+
+        // Add assistant message
+        const assistantMessage: Message = {
+          id: uuidv4(),
+          role: "assistant",
+          content,
+          timestamp: new Date(),
+          toolCalls,
+        };
+
+        setMessages((prevMessages) => [...prevMessages, assistantMessage]);
       } catch (error) {
         console.error("Error sending message:", error);
+        addLogEntry('error', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`, { error });
 
+        // Add error message
         const errorMessage: Message = {
           id: uuidv4(),
           role: "assistant",
-          content: [{ // Ensure error content is also an array
+          content: {
             type: "text",
             text: `Error: ${
               error instanceof Error
                 ? error.message
                 : "Failed to communicate with the assistant"
             }`,
-          }],
+          },
           timestamp: new Date(),
         };
+
         setMessages((prevMessages) => [...prevMessages, errorMessage]);
       } finally {
         setIsLoading(false);
       }
     },
-    [processAssistantResponse, sessionId, clearSession, currentInputText] // Removed messagesRef from deps, it's a ref
+    [apiKey, messages, processAssistantResponse, getSessionId, addLogEntry]
   );
 
   // Clear all messages
@@ -281,19 +369,21 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     setMessages([]);
   }, []);
 
-  // Render children immediately; components consuming sessionId should handle the null state.
+  // Clear all logs
+  const clearLogs = useCallback(() => {
+    setActivityLogs([]);
+  }, []);
 
   return (
     <ChatContext.Provider
       value={{
         messages,
         isLoading,
-        currentInputText, // Pass renamed state
-        setCurrentInputText, // Pass renamed setter
+        activityLogs,
         sendMessage,
         clearMessages,
-        sessionId, // Pass sessionId state
-        clearSession, // Pass clearSession function
+        clearLogs,
+        addLogEntry,
       }}
     >
       {children}

@@ -6,28 +6,23 @@ import { Server as SocketIoServer } from "socket.io";
 import { config } from "dotenv";
 import { setupRoutes } from "./routes.js";
 import { setupMcpManager } from "./mcp/manager.js";
-import { SessionManager } from "./mcp/sessionManager.js"; // Import SessionManager
 
 // Load environment variables
 config();
 
-
 // Registry settings
-const REGISTRY_URL = process.env.REGISTRY_URL || "https://nanda-registry.com"; // Allow override, can be undefined
+const REGISTRY_URL = "https://nanda-registry.com";
 const REGISTRY_API_KEY = process.env.REGISTRY_API_KEY;
 
-// Client URL setting
-const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:3000"; // Default client URL
-
+// Create Express app
 const app = express();
 const server = http.createServer(app);
 
 // Configure CORS
 app.use(
   cors({
-    origin: CLIENT_URL, // Ensure this matches the deployed frontend URL
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
     credentials: true,
-    exposedHeaders: ["X-Session-Id"], // Keep exposed if client needs to read it, otherwise optional
   })
 );
 
@@ -38,31 +33,52 @@ app.use(express.raw({ type: "application/octet-stream" }));
 // Setup Socket.IO
 const io = new SocketIoServer(server, {
   cors: {
-    origin: CLIENT_URL, // Ensure this matches the deployed frontend URL
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
     methods: ["GET", "POST"],
     credentials: true,
   },
+  // Increased timeouts and improved reconnection settings
+  pingTimeout: 60000, // 60 seconds ping timeout
+  pingInterval: 25000, // 25 seconds ping interval
+  connectTimeout: 30000 // 30 seconds connect timeout
 });
 
-// Instantiate Session Manager
-const sessionManager = new SessionManager();
+// Store io instance in app for access in routes
+app.set('io', io);
 
-// Initialize MCP Manager with SessionManager and registry URL/Key
-const mcpManager = setupMcpManager(
-  io,
-  sessionManager,
-  REGISTRY_URL,
-  REGISTRY_API_KEY
-);
+// Socket.IO event handling
+io.on('connection', (socket) => {
+  console.log(`Socket connected: ${socket.id}`);
+  
+  socket.on('disconnect', () => {
+    console.log(`Socket disconnected: ${socket.id}`);
+  });
+});
 
-// Setup routes, passing both managers
-setupRoutes(app, mcpManager, sessionManager); // Pass sessionManager
+// Initialize MCP Manager
+const mcpManager = setupMcpManager(io);
+
+// Setup routes
+setupRoutes(app, mcpManager);
+
+// Load servers from registry on startup
+(async () => {
+  try {
+    // No need to fetch from registry as servers are loaded from local storage
+    console.log(`Loading servers from local storage...`);
+    const availableServers = mcpManager.getAvailableServers();
+    console.log(`Loaded ${availableServers.length} servers from local storage`);
+  } catch (error) {
+    console.error("Error loading servers:", error);
+  }
+})();
 
 // Handle graceful shutdown
 process.on("SIGTERM", async () => {
   console.log("SIGTERM received, shutting down gracefully");
-  // Cleanup sessions (closes MCP clients)
-  await sessionManager.cleanupAllSessions();
+  if (mcpManager.cleanup) {
+    await mcpManager.cleanup();
+  }
   server.close(() => {
     console.log("Server closed");
     process.exit(0);
@@ -73,10 +89,4 @@ process.on("SIGTERM", async () => {
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
-  if (REGISTRY_URL) {
-    console.log(`Using registry URL: ${REGISTRY_URL}`);
-  } else {
-    console.log(`Registry URL not configured.`);
-  }
-  console.log(`Accepting requests from client URL: ${CLIENT_URL}`);
 });

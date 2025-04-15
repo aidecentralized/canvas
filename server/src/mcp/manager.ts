@@ -1,260 +1,656 @@
 // server/src/mcp/manager.ts
 import { Server as SocketIoServer } from "socket.io";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { Tool } from "@modelcontextprotocol/sdk/types.js"; // Correct import path for Tool type
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { ToolRegistry } from "./toolRegistry.js";
 import { SessionManager } from "./sessionManager.js";
-import { ToolRegistry } from "./toolRegistry.js"; // Needed for session.toolRegistry
-import { RegistryClient } from "../registry/client.js"; // Import RegistryClient
+import { ToolInfo, CredentialRequirement, ServerConfig } from "./types.js";
+import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs';
+import path from 'path';
 
-// Define ServerConfig interface
-export interface ServerConfig {
-  id: string;
-  name: string;
-  url: string;
-  description?: string;
-  types?: string[];
-  tags?: string[];
-  verified?: boolean;
-  rating?: number;
+// Disable server-side persistence - we'll use browser-based storage instead
+// const STORAGE_DIR = process.env.MCP_STORAGE_DIR || path.join(process.cwd(), 'storage');
+// const SERVERS_FILE = path.join(STORAGE_DIR, 'servers.json');
+
+// // Ensure the storage directory exists
+// if (!fs.existsSync(STORAGE_DIR)) {
+//   fs.mkdirSync(STORAGE_DIR, { recursive: true });
+// }
+
+// // Create servers file if it doesn't exist - with empty array
+// if (!fs.existsSync(SERVERS_FILE)) {
+//   fs.writeFileSync(SERVERS_FILE, JSON.stringify([], null, 2));
+// }
+
+// // Ensure the file is only readable by the server process
+// try {
+//   fs.chmodSync(SERVERS_FILE, 0o600);
+// } catch (error) {
+//   console.warn('Unable to set file permissions, server configuration may not be secure');
+// }
+
+// Disable loading servers from file - rely on client registrations only
+const loadServers = (): ServerConfig[] => {
+  // Comment out file loading
+  // try {
+  //   const data = fs.readFileSync(SERVERS_FILE, 'utf8');
+  //   return JSON.parse(data);
+  // } catch (error) {
+  //   console.error('Error loading servers:', error);
+  //   return [];
+  // }
+  return []; // Return empty array - no pre-loaded servers
+};
+
+// Disable saving servers to file
+const saveServers = (servers: ServerConfig[]) => {
+  // Comment out file saving
+  // try {
+  //   fs.writeFileSync(SERVERS_FILE, JSON.stringify(servers, null, 2));
+  // } catch (error) {
+  //   console.error('Error saving servers:', error);
+  // }
+  // No-op - we don't save servers anymore
+};
+
+// Local type declarations instead of importing from shared
+// Remove local type declarations since we're importing them now
+
+interface ToolCredentialInfo {
+  toolName: string;
+  serverName: string;
+  serverId: string;
+  credentials: CredentialRequirement[];
 }
 
 export interface McpManager {
-  registerServer: (sessionId: string, serverConfig: ServerConfig) => Promise<void>;
-  unregisterServer: (sessionId: string, serverId: string) => Promise<void>;
-  getAvailableServers: (sessionId: string) => ServerConfig[];
-  discoverTools: (sessionId: string) => Promise<Tool[]>;
+  discoverTools: (sessionId: string) => Promise<ToolInfo[]>;
   executeToolCall: (
     sessionId: string,
     toolName: string,
     args: any
   ) => Promise<any>;
-  fetchRegistryServers: () => Promise<ServerConfig[]>;
+  registerServer: (serverConfig: ServerConfig) => Promise<boolean>;
+  getAvailableServers: () => ServerConfig[];
+  getToolsWithCredentialRequirements: (sessionId: string) => ToolCredentialInfo[];
+  setToolCredentials: (
+    sessionId: string, 
+    toolName: string, 
+    serverId: string, 
+    credentials: Record<string, string>
+  ) => Promise<boolean>;
+  cleanup: () => Promise<void>;
+  getSessionManager: () => SessionManager;
 }
 
-export function setupMcpManager(
-  io: SocketIoServer,
-  sessionManager: SessionManager, // Inject SessionManager
-  registryUrl?: string, // Optional registry URL
-  registryApiKey?: string
-): McpManager {
+// Remove local ServerConfig interface
 
-  // Registry client if URL is provided
-  const registryClient = registryUrl
-    ? new RegistryClient({
-        url: registryUrl,
-        apiKey: registryApiKey,
-      })
-    : null;
+// Rate limiting data structures
+interface RateLimitInfo {
+  lastRequestTime: number;
+  requestCount: number;
+  isProcessing: boolean;
+  queue: Array<{
+    resolve: (value: any) => void;
+    reject: (error: any) => void;
+    toolName: string;
+    sessionId: string;
+    args: any;
+  }>;
+}
 
-  // Helper to get or create MCP client for a session/server
-  const getOrCreateClient = async (sessionId: string, serverConfig: ServerConfig): Promise<Client | null> => {
-    const session = sessionManager.getSession(sessionId);
-    if (!session) {
-        console.error(`[McpManager] Session ${sessionId} not found in getOrCreateClient.`);
-        return null;
-    }
+// Rate limiting configuration
+const RATE_LIMIT_CONFIG = {
+  // Maximum requests per minute to a server
+  requestsPerMinute: 10,
+  // Minimum time between requests in ms (100ms = 0.1s)
+  minRequestSpacing: 500,
+  // Maximum queue length per server
+  maxQueueLength: 50,
+};
 
-    let client = session.connectedClients.get(serverConfig.id);
-    if (client) { // Check if client exists in map
-        console.log(`[McpManager] Reusing existing client for server ${serverConfig.id} in session ${sessionId}`);
-        // Optional: Add a ping or status check here if the SDK supports it
-        try {
-            // Example: await client.ping(); // If a ping method exists
-            // If the SDK requires an explicit check or action to verify connection, add it here.
-            // If listTools itself serves as a connection check, this block might be simpler.
-            return client;
-        } catch (checkError) {
-            console.warn(`[McpManager] Existing client for ${serverConfig.id} failed check. Reconnecting. Error:`, checkError);
-            // Attempt to close the potentially defunct client before creating a new one
-            client.close().catch(err => console.error(`[McpManager] Error closing defunct client for ${serverConfig.id}: ${err}`));
-            sessionManager.removeSessionClient(sessionId, serverConfig.id); // Ensure removal
-            // Proceed to create a new client below
-        }
-    }
+export function setupMcpManager(io: SocketIoServer): McpManager {
+  console.log("--- McpManager setup initiated ---");
+  
+  // Registry to keep track of available MCP tools
+  const toolRegistry = new ToolRegistry();
 
-    console.log(`[McpManager] Creating new client for server ${serverConfig.id} (${serverConfig.url}) in session ${sessionId}`);
+  // Session manager to handle client sessions
+  const sessionManager = new SessionManager();
+
+  // Available server configurations - start with empty array
+  const servers: ServerConfig[] = [];
+
+  // Cache of connected clients
+  const connectedClients: Map<string, Client> = new Map();
+
+  // Track rate limit information for each server
+  const rateLimits = new Map<string, RateLimitInfo>();
+
+  const registerServer = async (serverConfig: ServerConfig): Promise<boolean> => {
     try {
-        client = new Client({ url: serverConfig.url }); // Assuming default transport or configure SSE if needed
+      console.log(`Registering server: ${JSON.stringify(serverConfig)}`);
+      
+      // Initialize rate limit tracking for this server if it doesn't exist
+      if (!rateLimits.has(serverConfig.id)) {
+        rateLimits.set(serverConfig.id, {
+          lastRequestTime: 0,
+          requestCount: 0,
+          isProcessing: false,
+          queue: []
+        });
+      }
+      
+      // If client already exists, just return
+      if (connectedClients.has(serverConfig.id)) {
+        console.log(`Already connected to server: ${serverConfig.id}`);
+        return true;
+      }
+      
+      // Check if this server already exists
+      const existingIndex = servers.findIndex((s) => s.id === serverConfig.id);
+      if (existingIndex !== -1) {
+        servers[existingIndex] = serverConfig;
+      } else {
+        servers.push(serverConfig);
+      }
 
-        // Event listeners removed - error handling should be done around specific operations (listTools, callTool)
+      // Create MCP client for this server using SSE transport
+      const sseUrl = new URL(serverConfig.url);
+      
+      // Use standard SSE transport with default timeout
+      const transport = new SSEClientTransport(sseUrl);
 
-        // Explicit connect call removed - assuming implicit connection on first RPC or handled by SDK constructor
-
-        // Add client to session *before* attempting discovery
-        sessionManager.addSessionClient(sessionId, serverConfig.id, client);
-
-        // Discover tools immediately (acts as connection test)
-        try {
-            const listToolsResult = await client.listTools();
-            const tools: Tool[] = (listToolsResult && Array.isArray((listToolsResult as any).tools))
-                ? (listToolsResult as any).tools
-                : [];
-
-            console.log(`[McpManager] Discovered ${tools.length} tools from ${serverConfig.id} for session ${sessionId}`);
-
-            if (tools.length > 0) {
-                session.toolRegistry.registerTools(serverConfig.id, client, tools);
-            } else {
-                 console.warn(`[McpManager] No tools found or unexpected format from listTools for ${serverConfig.id}`);
-            }
-        } catch (discoveryError) {
-            console.error(`[McpManager] Error discovering tools from ${serverConfig.id} for session ${sessionId}:`, discoveryError);
-            // If discovery fails, the connection likely failed. Close and remove the client.
-            client.close().catch(err => console.error(`[McpManager] Error closing client after discovery failure for ${serverConfig.id}: ${err}`));
-            sessionManager.removeSessionClient(sessionId, serverConfig.id); // Ensure removal on discovery failure
-            return null; // Indicate failure to create/connect/discover
+      const client = new Client({
+        name: "mcp-host",
+        version: "1.0.0",
+        // Set the timeout at the client level
+        defaultTimeout: 300000, // 5 minutes timeout (increased from 3 minutes)
+        // Add retry configuration
+        retryConfig: {
+          maxRetries: 5, // Increased from 3
+          initialDelay: 2000, // Start with 2 seconds delay (increased from 1)
+          maxDelay: 20000,    // Max 20 second delay (increased from 10)
+          backoffFactor: 2    // Exponential backoff factor
         }
+      });
 
-        return client;
+      await client.connect(transport);
+      console.log(`Successfully connected to server: ${serverConfig.id}`);
+
+      // Fetch available tools from the server
+      const toolsResult = await client.listTools();
+      console.log(`Tools discovered: ${JSON.stringify(toolsResult?.tools?.map(t => t.name) || [])}`);
+
+      // Ensure the server has tools
+      if (!toolsResult?.tools || toolsResult.tools.length === 0) {
+        throw new Error("No tools discovered on MCP server");
+      }
+
+      // Register tools in our registry
+      toolRegistry.registerTools(
+        serverConfig.id,
+        serverConfig.name,
+        serverConfig.rating ?? 0,
+        client,
+        toolsResult.tools
+      );
+
+      // Store the connected client for later use
+      connectedClients.set(serverConfig.id, client);
+
+      console.log(
+        `Registered server ${serverConfig.name} with ${
+          toolsResult?.tools?.length
+        } tools`
+      );
+
+      // Successful Registration
+      return true;
     } catch (error) {
-        console.error(`[McpManager] Failed to create client for server ${serverConfig.id} in session ${sessionId}:`, error);
-        // Ensure removal if client creation itself failed (e.g., invalid URL format in SDK constructor)
-        sessionManager.removeSessionClient(sessionId, serverConfig.id);
-        return null;
+      console.error(
+        `Failed to register server ${serverConfig.name}:`,
+        error
+      );
+
+      // Clean up in-memory state
+      const index = servers.findIndex((s) => s.id === serverConfig.id);
+      if (index !== -1) {
+        servers.splice(index, 1);
+      }
+
+      // Failed registration
+      return false;
     }
   };
 
-  const registerServer = async (sessionId: string, serverConfig: ServerConfig): Promise<void> => {
-    console.log(`[McpManager] Registering server ${serverConfig.id} for session ${sessionId}`);
-    const added = sessionManager.addSessionServer(sessionId, serverConfig);
-    if (!added) {
-        throw new Error(`Session ${sessionId} not found.`);
-    }
-    // Attempt to connect and discover tools
-    await getOrCreateClient(sessionId, serverConfig);
+  // Discover all available tools for a session
+  const discoverTools = async (sessionId: string): Promise<ToolInfo[]> => {
+    // Get all tools from the registry
+    const tools = toolRegistry.getAllTools();
+    
+    // For each tool, check if we have stored credentials and modify schemas accordingly
+    const modifiedTools = tools.map(toolInfo => {
+      const { serverId, name } = toolInfo;
+      
+      // Only process tools with credential requirements
+      if (toolInfo.credentialRequirements && toolInfo.credentialRequirements.length > 0) {
+        // Check if we have stored credentials for this tool
+        const credentials = sessionManager.getToolCredentials(sessionId, name, serverId);
+        
+        if (credentials) {
+          console.log(`🔑 Modifying schema for tool ${name} to mark credentials as optional since they are stored`);
+          
+          // Create a copy of the tool info to modify
+          const modifiedTool = { ...toolInfo };
+          
+          // If the tool has inputSchema, create a modified version
+          if (modifiedTool.inputSchema) {
+            // Create a deep copy of the input schema
+            const modifiedSchema = JSON.parse(JSON.stringify(modifiedTool.inputSchema));
+            
+            // If the schema has a __credentials property, mark it as not required
+            if (modifiedSchema.properties && modifiedSchema.properties.__credentials &&
+                modifiedSchema.required && modifiedSchema.required.includes('__credentials')) {
+              modifiedSchema.required = modifiedSchema.required.filter(req => req !== '__credentials');
+            }
+            
+            // For common credential parameters like api_key, make them optional too
+            if (modifiedSchema.required) {
+              toolInfo.credentialRequirements.forEach(cred => {
+                const credId = cred.id;
+                if (modifiedSchema.required.includes(credId)) {
+                  modifiedSchema.required = modifiedSchema.required.filter(req => req !== credId);
+                }
+              });
+            }
+            
+            // Update the description to indicate credentials are auto-injected
+            if (credentials) {
+              modifiedSchema.description = (modifiedSchema.description || '') + 
+                ' (Credentials are automatically applied from your saved settings)';
+              
+              // For each credential parameter, add a hint in the description
+              toolInfo.credentialRequirements.forEach(cred => {
+                const credId = cred.id;
+                if (modifiedSchema.properties[credId]) {
+                  modifiedSchema.properties[credId].description = 
+                    '✓ Using saved credential from your settings (you don\'t need to provide this)';
+                }
+              });
+            }
+            
+            // Update the modified schema
+            modifiedTool.inputSchema = modifiedSchema;
+          }
+          
+          return modifiedTool;
+        }
+      }
+      
+      // Return the original tool info if no changes needed
+      return toolInfo;
+    });
+    
+    console.log(`Discovered tools for session ${sessionId}: ${JSON.stringify(modifiedTools.map(t => t.name))}`);
+    return modifiedTools;
   };
 
-  const unregisterServer = async (sessionId: string, serverId: string): Promise<void> => {
-    console.log(`[McpManager] Unregistering server ${serverId} for session ${sessionId}`);
-    const session = sessionManager.getSession(sessionId);
-    if (!session) {
-        console.warn(`[McpManager] Session ${sessionId} not found during unregisterServer.`);
-        return; // Or throw? Consistent with registerServer, maybe throw.
-    }
-
-    // Close and remove client connection
-    const client = session.connectedClients.get(serverId);
-    if (client) {
-        // Attempt to close, but don't wait indefinitely. Handle potential errors.
-        client.close().catch(err => console.error(`[McpManager] Error closing client during unregister for ${serverId} in session ${sessionId}: ${err}`));
-        // Remove client from session manager immediately after initiating close
-        sessionManager.removeSessionClient(sessionId, serverId);
-    } else {
-        // Ensure removal from map even if client wasn't found (e.g., connection failed initially)
-        sessionManager.removeSessionClient(sessionId, serverId);
-    }
-
-
-    // Remove server config from session list
-    sessionManager.removeSessionServer(sessionId, serverId);
-
-    // Remove tools associated with this server from the session's registry
-    session.toolRegistry.removeToolsByServerId(serverId); // Corrected method name
-    console.log(`[McpManager] Server ${serverId} and its tools removed for session ${sessionId}`);
-  };
-
-  const getAvailableServers = (sessionId: string): ServerConfig[] => {
-    return sessionManager.getSessionServers(sessionId);
-  };
-
-  const discoverTools = async (sessionId: string): Promise<Tool[]> => {
-    const session = sessionManager.getSession(sessionId);
-    if (!session) {
-        console.error(`[McpManager] Session ${sessionId} not found during discoverTools.`);
-        return [];
-    }
-    console.log(`[McpManager] Discovering tools for session ${sessionId}`);
-
-    // Optional: Could add logic here to re-discover tools from connected clients if needed.
-    // For now, rely on discovery during connection via getOrCreateClient.
-
-    // Return all tools currently registered for the session
-    return session.toolRegistry.getAllTools(); // Use session's toolRegistry
-  };
-
+  // Execute a tool call with rate limiting
   const executeToolCall = async (
     sessionId: string,
     toolName: string,
     args: any
   ): Promise<any> => {
-    const session = sessionManager.getSession(sessionId);
-    if (!session) {
-        throw new Error(`Session ${sessionId} not found.`);
-    }
-    console.log(`[McpManager] Executing tool '${toolName}' for session ${sessionId}`);
-
-    // Find tool in the SESSION-SPECIFIC registry
-    const toolInfo = session.toolRegistry.getToolInfo(toolName); // Use session's toolRegistry
+    const toolInfo = toolRegistry.getToolInfo(toolName);
     if (!toolInfo) {
-      throw new Error(`Tool '${toolName}' not found in registry for session ${sessionId}`);
+      throw new Error(`Tool ${toolName} not found`);
     }
 
     const { serverId } = toolInfo;
-    // Get the session-specific client connection
-    let client = session.connectedClients.get(serverId);
 
-    // If client is missing, attempt to reconnect
-    if (!client) { // Check only if client exists in map
-      const serverConfig = session.servers.find(s => s.id === serverId);
-      if (serverConfig) {
-          console.warn(`[McpManager] Client for ${serverId} not found. Attempting reconnect for session ${sessionId}...`);
-          client = await getOrCreateClient(sessionId, serverConfig); // Re-assign client
-          if (!client) {
-              throw new Error(`Failed to reconnect to server ${serverId} for tool '${toolName}' in session ${sessionId}`);
+    // Create rate limit info for this server if it doesn't exist
+    if (!rateLimits.has(serverId)) {
+      rateLimits.set(serverId, {
+        lastRequestTime: 0,
+        requestCount: 0,
+        isProcessing: false,
+        queue: [],
+      });
+    }
+
+    const rateLimit = rateLimits.get(serverId);
+
+    // Check if we've exceeded the queue limit
+    if (rateLimit.queue.length >= RATE_LIMIT_CONFIG.maxQueueLength) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `I'm sorry, but there are too many pending requests to this server. Please try again later.`
           }
-      } else {
-          // This case should ideally not happen if toolInfo was found, but handle defensively
-          throw new Error(`Server config for server ${serverId} not found for tool '${toolName}' in session ${sessionId}, despite tool being registered.`);
+        ],
+        serverInfo: {
+          id: serverId,
+          name: toolInfo.serverName || serverId,
+          tool: toolName
+        }
+      };
+    }
+    
+    // Add this request to the queue
+    return new Promise((resolve, reject) => {
+      rateLimit.queue.push({
+        resolve,
+        reject,
+        toolName,
+        sessionId,
+        args,
+      });
+      
+      // Start processing the queue if it's not already being processed
+      processQueue(serverId);
+    });
+  };
+
+  // Process queue for a server
+  const processQueue = async (serverId: string) => {
+    const rateLimit = rateLimits.get(serverId);
+    if (!rateLimit || rateLimit.queue.length === 0 || rateLimit.isProcessing) {
+      return;
+    }
+
+    rateLimit.isProcessing = true;
+
+    try {
+      // Calculate time to wait before next request
+      const now = Date.now();
+      const timeSinceLastRequest = now - rateLimit.lastRequestTime;
+      const timeToWait = Math.max(0, RATE_LIMIT_CONFIG.minRequestSpacing - timeSinceLastRequest);
+
+      if (timeToWait > 0) {
+        await new Promise(resolve => setTimeout(resolve, timeToWait));
+      }
+
+      // Get the next request from the queue
+      const nextRequest = rateLimit.queue.shift();
+      if (!nextRequest) {
+        rateLimit.isProcessing = false;
+        return;
+      }
+
+      // Update rate limit info
+      rateLimit.lastRequestTime = Date.now();
+      rateLimit.requestCount++;
+
+      // Execute the actual tool call
+      const toolInfo = toolRegistry.getToolInfo(nextRequest.toolName);
+      if (!toolInfo) {
+        nextRequest.reject(new Error(`Tool ${nextRequest.toolName} not found`));
+        rateLimit.isProcessing = false;
+        setTimeout(() => processQueue(serverId), 0);
+        return;
+      }
+
+      const { client, tool, serverId: toolServerId } = toolInfo;
+      const maxRetries = 2;
+      let retries = 0;
+      let lastError: any = null;
+
+      while (retries <= maxRetries) {
+        try {
+          // Check if the tool requires credentials
+          const requiresCredentials = toolInfo.credentialRequirements && 
+                                     toolInfo.credentialRequirements.length > 0;
+          
+          // Prepare args with credentials if needed
+          let callArgs = {...nextRequest.args};
+          
+          if (requiresCredentials) {
+            // Get credentials from session manager
+            const credentials = sessionManager.getToolCredentials(
+              nextRequest.sessionId,
+              nextRequest.toolName,
+              toolServerId
+            );
+            
+            if (credentials) {
+              console.log(`🔑 Using stored credentials for tool ${nextRequest.toolName}`);
+              
+              // Apply credentials to the args
+              // Check credential requirement IDs to determine how to inject credentials
+              toolInfo.credentialRequirements?.forEach(cred => {
+                const credId = cred.id;
+                if (credentials[credId]) {
+                  // Add the credential directly to args
+                  console.log(`Adding credential: ${credId}`);
+                  callArgs[credId] = credentials[credId];
+                }
+              });
+              
+              // If the tool expects a __credentials object, create it
+              const needsCredentialsObject = tool?.inputSchema?.properties?.__credentials;
+              if (needsCredentialsObject && !callArgs.__credentials) {
+                callArgs.__credentials = {};
+                toolInfo.credentialRequirements?.forEach(cred => {
+                  if (credentials[cred.id]) {
+                    callArgs.__credentials[cred.id] = credentials[cred.id];
+                  }
+                });
+              }
+              
+              // Add a flag to tell the AI that credentials are being automatically used
+              // This helps the LLM understand that credentials are already handled
+              callArgs.__injectedCredentials = true;
+            } else {
+              console.log(`⚠️ Tool ${nextRequest.toolName} requires credentials, but none were found in session ${nextRequest.sessionId}`);
+              
+              // If args don't contain credential parameters, ask the user to save credentials first
+              const missingCredentials = toolInfo.credentialRequirements?.filter(
+                cred => !callArgs[cred.id]
+              );
+              
+              if (missingCredentials && missingCredentials.length > 0) {
+                // Create a user-friendly error message
+                const missingList = missingCredentials.map(cred => cred.name || cred.id).join(", ");
+                console.log(`Missing required credentials: ${missingList}`);
+                
+                // Return a friendly message to the user instead of executing the tool
+                nextRequest.resolve({
+                  content: [
+                    {
+                      type: "text",
+                      text: `This tool requires the following credentials: ${missingList}. Please go to Settings > Tool Credentials to save your credentials first.`,
+                    }
+                  ],
+                  serverInfo: {
+                    id: serverId,
+                    name: toolInfo.serverName || serverId,
+                    tool: nextRequest.toolName
+                  }
+                });
+                
+                rateLimit.isProcessing = false;
+                setTimeout(() => processQueue(serverId), 0);
+                return;
+              }
+              // Otherwise continue with provided parameters
+            }
+          } else {
+            console.log(`🔧 Tool ${nextRequest.toolName} does not require credentials`);
+          }
+          
+          // Execute the tool via MCP with the prepared arguments
+          console.log(`🔧 Executing tool ${nextRequest.toolName} (attempt ${retries + 1}/${maxRetries + 1})`);
+          const result = await client.callTool({
+            name: nextRequest.toolName,
+            arguments: callArgs,
+            // The timeout is set at client level already
+          });
+
+          // Add server info to the result for debugging
+          const enhancedResult = {
+            ...result,
+            content: Array.isArray(result.content) 
+              ? result.content
+              : [{ 
+                  type: "text", 
+                  text: `Tool result for ${nextRequest.toolName}`,
+                }],
+            serverInfo: {
+              id: serverId,
+              name: toolInfo.serverName || serverId,
+              tool: nextRequest.toolName
+            }
+          };
+
+          // For ALL tool responses, add instructions for Claude to display the result verbatim
+          // This is universal and doesn't depend on tool naming conventions
+          if (enhancedResult.content && enhancedResult.content.length > 0) {
+            // Get the original result text
+            const originalResultText = enhancedResult.content[0].text;
+            
+            // Create a new enhanced content with clear instructions for Claude
+            enhancedResult.content = [
+              {
+                type: "text",
+                text: `TOOL RESULT:\n\n${originalResultText}\n\nNOTE TO CLAUDE: Display the above result exactly as shown without analysis or commentary. If this is an optimization or transformation, focus on showing the exact output.`
+              }
+            ];
+          }
+
+          console.log(`✅ Tool ${nextRequest.toolName} executed successfully after ${retries} retries`);
+          
+          // Resolve the promise with the result
+          nextRequest.resolve(enhancedResult);
+          break;
+        } catch (error) {
+          lastError = error;
+          console.error(`Error executing tool ${nextRequest.toolName} (attempt ${retries + 1}/${maxRetries + 1}):`, error);
+          
+          // If it's a timeout error, try again
+          if (error.code === -32001) { // This is the timeout error code
+            retries++;
+            if (retries <= maxRetries) {
+              const backoffMs = Math.min(1000 * Math.pow(2, retries), 10000); // Exponential backoff up to 10 seconds
+              console.log(`Retrying in ${backoffMs}ms...`);
+              await new Promise(resolve => setTimeout(resolve, backoffMs));
+              continue;
+            }
+          } else {
+            // For non-timeout errors, don't retry
+            break;
+          }
+        }
+      }
+      
+      // If we're here and all retries failed, reject the promise
+      if (retries > maxRetries) {
+        console.error(`All ${maxRetries + 1} attempts to execute tool ${nextRequest.toolName} failed.`);
+        
+        // Create a fallback response for timeout errors
+        if (lastError && lastError.code === -32001) {
+          nextRequest.resolve({
+            content: [
+              {
+                type: "text",
+                text: `I'm sorry, but I couldn't get a response from the ${nextRequest.toolName} service. The request timed out after multiple attempts. This might be due to network issues or the service being temporarily unavailable.`,
+              }
+            ]
+          });
+        } else {
+          // For other errors, reject with the last error
+          nextRequest.reject(lastError);
+        }
+      }
+    } finally {
+      // Mark as no longer processing and process the next item in the queue
+      rateLimit.isProcessing = false;
+      setTimeout(() => processQueue(serverId), 0);
+    }
+  };
+
+  // Get all available server configurations
+  const getAvailableServers = (): ServerConfig[] => {
+    console.log(`Available servers: ${JSON.stringify(servers.map(s => s.id))}`);
+    return [...servers];
+  };
+
+  // Get tools that require credentials
+  const getToolsWithCredentialRequirements = (sessionId: string): ToolCredentialInfo[] => {
+    // Re-enabled credential checking
+    console.log(`Tool credential check for session ${sessionId}`);
+    
+    const tools = toolRegistry.getToolsWithCredentialRequirements();
+    console.log(`Tools with credential requirements for session ${sessionId}: ${JSON.stringify(tools.map(t => t.toolName))}`);
+    return tools;
+  };
+
+  // Set credentials for a tool
+  const setToolCredentials = async (
+    sessionId: string,
+    toolName: string,
+    serverId: string,
+    credentials: Record<string, string>
+  ): Promise<boolean> => {
+    console.log(`Setting credentials for tool ${toolName} from server ${serverId}`);
+    try {
+      // Store credentials in session manager only (browser session)
+      sessionManager.setToolCredentials(
+        sessionId,
+        toolName,
+        serverId,
+        credentials
+      );
+      
+      console.log(`🔐 Storing credentials for tool: ${toolName}, server: ${serverId}`);
+      console.log(`🔑 Credential keys: ${JSON.stringify(Object.keys(credentials))}`);
+      console.log(`✅ Credentials stored successfully for ${toolName}`);
+      
+      return true;
+    } catch (error) {
+      console.error(`Error setting credentials for tool ${toolName}:`, error);
+      return false;
+    }
+  };
+
+  // Clean up connections when closing
+  const cleanup = async (): Promise<void> => {
+    for (const [serverId, client] of connectedClients.entries()) {
+      try {
+        await client.close();
+        console.log(`Closed connection to server ${serverId}`);
+      } catch (error) {
+        console.error(`Error closing connection to server ${serverId}:`, error);
       }
     }
-
-    try {
-      // Execute the tool via MCP using the session-specific client
-      console.log(`[McpManager] Executing tool ${toolName} via server ${serverId} for session ${sessionId}`);
-      // Use callTool with a single object argument containing name and arguments
-      const result = await client.callTool({ name: toolName, arguments: args }); // Pass object { name, arguments }
-      return result;
-    } catch (error) {
-      console.error(`[McpManager] Error executing tool ${toolName} for session ${sessionId}:`, error);
-      throw error; // Re-throw the execution error
-    }
+    connectedClients.clear();
   };
 
-  // Fetch servers from registry (Does NOT register them)
-  const fetchRegistryServers = async (): Promise<ServerConfig[]> => {
-    if (!registryClient) {
-      console.log("[McpManager] Registry client not configured. Cannot fetch registry servers.");
-      return [];
-    }
-    try {
-      console.log("[McpManager] Fetching servers from central registry...");
-      const servers = await registryClient.getServers();
-      console.log(`[McpManager] Fetched ${servers.length} servers from registry.`);
-      // Map registry format to ServerConfig, ensuring required fields are present
-      return servers.map(s => ({
-          id: s.id, // Assuming registry provides a unique ID
-          name: s.name || s.id, // Fallback name if needed
-          url: s.url, // Assuming registry provides the correct SSE URL
-          description: s.description,
-          tags: s.tags,
-          verified: s.verified,
-          rating: s.rating,
-          types: s.types,
-          // Add other fields if needed
-      })).filter(s => s.url); // Ensure URL is present
-    } catch (error) {
-      console.error("[McpManager] Error fetching servers from registry:", error);
-      return []; // Return empty on error
-    }
-  };
+  // Disable auto-registration process - rely on client registrations instead
+  // const autoRegisterServers = async () => {
+  //   console.log(`Auto-registering ${servers.length} servers from storage...`);
+  //   for (const server of servers) {
+  //     await registerServer(server);
+  //   }
+  // };
+  
+  // // Start auto-registration process in the background
+  // autoRegisterServers().catch(error => {
+  //   console.error("Error auto-registering servers:", error);
+  // });
 
   // Return the MCP manager interface
   return {
-    registerServer,
-    unregisterServer,
-    getAvailableServers,
     discoverTools,
     executeToolCall,
-    fetchRegistryServers,
+    registerServer,
+    getAvailableServers,
+    getToolsWithCredentialRequirements,
+    setToolCredentials,
+    cleanup,
+    getSessionManager: () => sessionManager,
   };
 }

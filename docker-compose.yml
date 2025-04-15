@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # Backend server
   server:
@@ -14,24 +12,27 @@ services:
       - NODE_ENV=production
       - PORT=4000
       - CLIENT_URL=http://localhost:3000
+      - CREDENTIAL_ENCRYPTION_KEY=1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
     volumes:
-      - ./server/logs:/app/server/logs
+      - ./server/logs:/app/logs
     networks:
       - mcp-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # Frontend client
   client:
     build:
       context: .
       dockerfile: Dockerfile.client
+      args:
+        - REACT_APP_API_BASE_URL=http://localhost:4000
     container_name: mcp-host-client
     restart: unless-stopped
     ports:
       - "3000:3000"
-    # Runtime environment variables are not needed for the client service
-    # as REACT_APP_API_BASE_URL is baked in during the build stage (Dockerfile.client).
-    # environment:
-    #   - REACT_APP_API_BASE_URL=http://server:4000 # Example if needed at runtime, but not typical for CRA builds
+    environment:
+      - REACT_APP_API_BASE_URL=http://localhost:4000
     depends_on:
       - server
     networks:
