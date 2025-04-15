@@ -1,7 +1,7 @@
 // client/src/components/Header.tsx
 import React from "react";
 import { Box, Flex, IconButton, Heading, Icon, Image } from "@chakra-ui/react";
-import { FaCog, FaCode } from "react-icons/fa";
+import { FaCog, FaCode, FaNetworkWired } from "react-icons/fa";
 
 interface HeaderProps {
   onOpenSettings: () => void;
@@ -24,22 +24,25 @@ const Header: React.FC<HeaderProps> = ({ onOpenSettings }) => {
       boxShadow="0 1px 10px rgba(0, 0, 0, 0.2)"
     >
       <Flex alignItems="center">
-        <Image 
-          src="/NANDA.png" 
-          alt="NANDA Logo" 
-          boxSize="32px" 
+        <Icon 
+          as={FaNetworkWired}
+          boxSize="40px"
+          color="#ff4d4d"
           mr={3}
-          display="inline-block"
-          verticalAlign="middle"
         />
         <Heading 
-          size="md" 
-          fontWeight="600"
-          bgGradient="linear(to-r, white, whiteAlpha.700)"
+          size="lg" 
+          fontWeight="700"
+          bgGradient="linear(to-r, #ff4d4d, #ff9966)"
           bgClip="text"
-          lineHeight="32px"
+          letterSpacing="tight"
+          lineHeight="40px"
           display="inline-flex"
           alignItems="center"
+          textShadow="0 0 10px rgba(255, 77, 77, 0.3)"
+          transform="translateY(6px)"
+          mt="-4px"
+          pb="6px"
         >
           NANDA Host
         </Heading>
