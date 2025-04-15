@@ -7,3 +7,4 @@ client/dist
 client/package-lock.json
 client/build
 **/.DS_Store
+node_modules
