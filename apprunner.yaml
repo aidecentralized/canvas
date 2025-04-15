@@ -1,0 +1,23 @@
+version: 1.0
+runtime: nodejs16
+build:
+  commands:
+    build:
+      - cd server
+      - npm ci
+      - npm run build
+run:
+  runtime-version: 16
+  command: cd server && node dist/index.js
+  network:
+    port: 4000
+    session-sticky: true
+  env:
+    - name: NODE_ENV
+      value: "production"
+health-check:
+  path: "/health"
+  interval: 10
+  timeout: 5
+  healthy-threshold: 1
+  unhealthy-threshold: 5

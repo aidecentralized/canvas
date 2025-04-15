@@ -6,6 +6,11 @@ import { McpManager } from "./mcp/manager.js";
 import { RegistryClient } from "./registry/client.js";
 
 export function setupRoutes(app: Express, mcpManager: McpManager): void {
+  // Add a route-level health check for testing
+  app.get('/api/health', (req: Request, res: Response) => {
+    res.status(200).json({ status: 'ok', message: 'API is healthy' });
+  });
+
   // Session endpoint
   app.post("/api/session", (req: Request, res: Response) => {
     console.log("API: /api/session called");
@@ -37,16 +42,27 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
 
   // Helper function to ensure session exists
   const ensureSession = (sessionId: string): string => {
+    console.log(`Ensuring session for ID: "${sessionId || 'none'}"`);
+    
     if (!sessionId) {
       console.log("No session ID provided, creating new session");
-      return mcpManager.getSessionManager().createSession();
+      const newSessionId = mcpManager.getSessionManager().createSession();
+      console.log(`Created new session with ID: ${newSessionId}`);
+      return newSessionId;
     }
     
-    // Use getOrCreateSession to handle the session
-    mcpManager.getSessionManager().getOrCreateSession(sessionId);
-    return sessionId;
+    try {
+      // Use getOrCreateSession to handle the session
+      mcpManager.getSessionManager().getOrCreateSession(sessionId);
+      console.log(`Using session ID: ${sessionId}`);
+      return sessionId;
+    } catch (error) {
+      console.error(`Session error: ${error.message}`);
+      const newSessionId = mcpManager.getSessionManager().createSession();
+      console.log(`Created new session due to error: ${newSessionId}`);
+      return newSessionId;
+    }
   };
-
 
   async function getWeightedRatingScore(serverId: string): Promise<{ average: number, count: number, score: number }> {
     try {
@@ -64,7 +80,6 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
       return { average: 0, count: 0, score: 0 };
     }
   }
-
 
   // Update the chat completion endpoint to ensure session
   app.post("/api/chat/completions", async (req: Request, res: Response) => {
@@ -90,7 +105,6 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
         apiKey,
       });
 
-
       //Mapping ratings to natural langauge
       const ratingTextMap = {
         1: "terrible",
@@ -100,23 +114,11 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
         5: "excellent",
       };
 
-
       // Fetch available tools if enabled
       let availableTools = [];
       if (tools) {
         try {
           const discoveredTools = await mcpManager.discoverTools(sessionId);
-
-          // availableTools = discoveredTools.map((tool) => {
-          //   const ratingLabel = ratingTextMap[tool.rating || 0] || "unrated";
-          //   const enhancedDescription = `${tool.description || ""} (This tool runs on a ${ratingLabel} server with a ${tool.rating || "?"}/5 rating.)`;
-
-          //   return{
-          //     name: tool.name,
-          //     description: enhancedDescription,
-          //     input_schema: tool.inputSchema,
-          //   }
-          // });
 
           availableTools = await Promise.all(discoveredTools.map(async (tool) => {
             const { average, count, score } = await getWeightedRatingScore(tool.serverId);
@@ -138,7 +140,6 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
           
           // Remove score field before sending to Claude
           availableTools = availableTools.map(({ score, ...tool }) => tool);
-
 
           // Preparing Claude to prefer higher rated tools 
           messages.unshift({
@@ -470,8 +471,6 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
     }
   });
 
-
-
   // Server registration endpoint
   app.post("/api/servers", async (req: Request, res: Response) => {
     console.log("API: /api/servers POST called with body:", JSON.stringify(req.body));
@@ -485,7 +484,6 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
     }
 
     try {
-
       const { average, count, score } = await getWeightedRatingScore(id);
       console.log(`📊 Server rating summary for ${name}: avg=${average}, votes=${count}, score=${score}`);
 
@@ -514,7 +512,7 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
 
   // Registry refresh endpoint
   app.post("/api/registry/refresh", async (req: Request, res: Response) => {
-    console.log("API: /api/registry/refresh called");
+    console.log("API: /api/registry/refresh called with headers:", JSON.stringify(req.headers));
     try {
       // Create registry client and fetch popular servers
       const registryClient = new RegistryClient();

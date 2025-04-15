@@ -18,11 +18,24 @@ const REGISTRY_API_KEY = process.env.REGISTRY_API_KEY;
 const app = express();
 const server = http.createServer(app);
 
+// Add a health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).send('Healthy');
+});
+
+// Add request logging middleware
+app.use((req, res, next) => {
+  console.log(`REQUEST: ${req.method} ${req.url}`);
+  next();
+});
+
 // Configure CORS
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    origin: [process.env.CLIENT_URL || "http://localhost:3000", "https://main.dayer1hj1pz2p.amplifyapp.com"],
     credentials: true,
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "x-api-key", "x-session-id"]
   })
 );
 
@@ -33,14 +46,15 @@ app.use(express.raw({ type: "application/octet-stream" }));
 // Setup Socket.IO
 const io = new SocketIoServer(server, {
   cors: {
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    origin: [process.env.CLIENT_URL || "http://localhost:3000", "https://main.dayer1hj1pz2p.amplifyapp.com"],
     methods: ["GET", "POST"],
     credentials: true,
   },
   // Increased timeouts and improved reconnection settings
   pingTimeout: 60000, // 60 seconds ping timeout
   pingInterval: 25000, // 25 seconds ping interval
-  connectTimeout: 30000 // 30 seconds connect timeout
+  connectTimeout: 30000, // 30 seconds connect timeout
+  path: '/socket.io' // Explicitly set socket.io path
 });
 
 // Store io instance in app for access in routes
@@ -60,6 +74,14 @@ const mcpManager = setupMcpManager(io);
 
 // Setup routes
 setupRoutes(app, mcpManager);
+
+// Log registered routes after setup
+console.log('Registered routes:');
+app._router.stack
+  .filter(r => r.route)
+  .forEach(r => {
+    console.log(`${Object.keys(r.route.methods).join(',')} ${r.route.path}`);
+  });
 
 // Load servers from registry on startup
 (async () => {
