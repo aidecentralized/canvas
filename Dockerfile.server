@@ -1,18 +1,25 @@
 # Dockerfile.server
 FROM node:20-alpine
 
+# Set base working directory
 WORKDIR /app
 
-# Copy package files
-COPY server/package*.json ./
-COPY server/tsconfig.json ./
-RUN npm install
-
-# Copy source code
-COPY server/src ./src
+# Copy shared code first
 COPY shared/ ./shared/
 
-# Build the application
+# Create server directory and copy server-specific files
+WORKDIR /app/server
+COPY server/package*.json ./
+COPY server/tsconfig.json ./
+
+# Install dependencies in the server directory
+RUN npm install
+
+# Copy server source code relative to the new WORKDIR (/app/server)
+COPY server/src ./src
+
+# Build the application (tsc will run in /app/server)
+# With rootDir: "..", output structure will be nested under ./dist
 RUN npm run build
 
 # Expose the server port
@@ -22,5 +29,6 @@ EXPOSE 4000
 ENV NODE_ENV=production
 ENV PORT=4000
 
-# Start the server
-CMD ["node", "dist/index.js"]
+# Start the server from the nested dist folder structure
+# e.g., /app/server/dist/server/src/index.js
+CMD ["node", "dist/server/src/index.js"]
