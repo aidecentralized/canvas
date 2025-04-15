@@ -32,6 +32,104 @@ export interface RegistryServer {
   rating?: number;
 }
 
+// Global rate limit state
+const globalRateLimitState = {
+  isRateLimited: false,
+  rateLimitResetTime: 0,
+  rateLimitBackoff: 5 * 60 * 1000, // 5 minutes initial backoff
+  consecutiveErrors: 0
+};
+
+// Helper function to implement retry with exponential backoff
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  retries = 3,
+  initialDelayMs = 1000
+): Promise<T> {
+  // Check if we're globally rate limited
+  if (globalRateLimitState.isRateLimited && Date.now() < globalRateLimitState.rateLimitResetTime) {
+    console.warn(`NANDA Registry API is currently rate limited. Waiting until ${new Date(globalRateLimitState.rateLimitResetTime).toISOString()}`);
+    throw new Error(`Rate limited by NANDA Registry API until ${new Date(globalRateLimitState.rateLimitResetTime).toISOString()}`);
+  }
+
+  let currentDelay = initialDelayMs;
+  let lastError: any;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      // If not the first attempt, log the retry
+      if (attempt > 0) {
+        console.log(`Retry attempt ${attempt}/${retries} after ${currentDelay}ms delay...`);
+      }
+      
+      const result = await fn();
+      
+      // Reset consecutive errors on success
+      if (globalRateLimitState.consecutiveErrors > 0) {
+        globalRateLimitState.consecutiveErrors = 0;
+      }
+      
+      return result;
+    } catch (error) {
+      lastError = error;
+      
+      // If this is a rate limit error (429)
+      if (axios.isAxiosError(error) && error.response?.status === 429) {
+        // Set global rate limit with exponential backoff
+        globalRateLimitState.isRateLimited = true;
+        globalRateLimitState.consecutiveErrors++;
+        
+        // Get retry-after header or use exponential backoff
+        let retryAfter = 0;
+        if (error.response.headers['retry-after']) {
+          retryAfter = parseInt(error.response.headers['retry-after']) * 1000;
+        } else {
+          // Increase backoff time exponentially with consecutive errors (max 1 hour)
+          retryAfter = Math.min(
+            globalRateLimitState.rateLimitBackoff * Math.pow(2, globalRateLimitState.consecutiveErrors - 1),
+            60 * 60 * 1000
+          );
+        }
+        
+        globalRateLimitState.rateLimitResetTime = Date.now() + retryAfter;
+        console.warn(`Rate limited by NANDA Registry API. Backing off for ${retryAfter/1000} seconds until ${new Date(globalRateLimitState.rateLimitResetTime).toISOString()}`);
+        
+        // If we have retries left
+        if (attempt < retries) {
+          // Wait for the current delay
+          await new Promise(resolve => setTimeout(resolve, currentDelay));
+          
+          // Exponential backoff - double the delay for next attempt
+          currentDelay *= 2;
+          
+          continue;
+        }
+      }
+      // If this is a server error (5xx)
+      else if (axios.isAxiosError(error) && error.response?.status && error.response.status >= 500) {
+        // If we have retries left
+        if (attempt < retries) {
+          console.warn(`Request failed with status ${error.response.status}, retrying...`);
+          
+          // Wait for the current delay
+          await new Promise(resolve => setTimeout(resolve, currentDelay));
+          
+          // Exponential backoff - double the delay for next attempt
+          currentDelay *= 2;
+          
+          continue;
+        }
+      }
+      
+      // If we're out of retries or it's not a retryable error, throw
+      throw lastError;
+    }
+  }
+  
+  // This should never happen, but TypeScript wants a return value
+  throw lastError;
+}
+
 export class RegistryClient {
   private baseUrl: string;
   private apiKey?: string;
@@ -47,13 +145,20 @@ export class RegistryClient {
   async getPopularServers(limit: number = 50): Promise<RegistryServer[]> {
     try {
       console.log(`Fetching popular servers from registry with limit ${limit}`);
-      const response = await axios.get(`${this.baseUrl}/api/v1/discovery/popular/`, {
-        params: { limit },
-        headers: this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {}
-      });
       
-      console.log(`Registry returned data structure:`, Object.keys(response.data));
-      return this.processServerResponse(response.data);
+      const fetchPopular = async () => {
+        const response = await axios.get(`${this.baseUrl}/api/v1/discovery/popular/`, {
+          params: { limit },
+          headers: this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {}
+        });
+        return response.data;
+      };
+      
+      // Use retry with backoff
+      const data = await retryWithBackoff(fetchPopular, 3, 1000);
+      
+      console.log(`Registry returned data structure:`, Object.keys(data));
+      return this.processServerResponse(data);
     } catch (error) {
       console.error('Error fetching popular servers from registry:', error);
       if (axios.isAxiosError(error)) {
@@ -69,23 +174,29 @@ export class RegistryClient {
 
   async getAllServers(limit: number = 100): Promise<RegistryServer[]> {
     try {
-      console.log("📡 Fetching all servers from /api/v1/servers");
+      console.log("📡 Fetching all servers from /api/v1/servers/");
   
       const headers: Record<string, string> = {};
       if (this.apiKey) {
         headers["Authorization"] = `Bearer ${this.apiKey}`;
       }
-  
-      const response = await axios.get(`${this.baseUrl}/api/v1/servers`, {
-        headers,
-        params: { limit },
-      });
+      
+      const fetchServers = async () => {
+        const response = await axios.get(`${this.baseUrl}/api/v1/servers/`, {
+          headers,
+          params: { limit },
+        });
+        return response;
+      };
+      
+      // Use retry with backoff
+      const response = await retryWithBackoff(fetchServers, 3, 1000);
   
       const servers = response.data?.data || [];
-      console.log(`/servers returned ${servers.length} servers`);
+      console.log(`/servers/ returned ${servers.length} servers`);
       return this.processServerResponse(servers);
     } catch (error) {
-      console.error("Error fetching from /servers endpoint, falling back to /popular:", error);
+      console.error("Error fetching from /servers/ endpoint, falling back to /popular:", error);
       return [];
     }
   }

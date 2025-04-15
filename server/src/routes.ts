@@ -5,7 +5,136 @@ import Anthropic from "@anthropic-ai/sdk";
 import { McpManager } from "./mcp/manager.js";
 import { RegistryClient } from "./registry/client.js";
 
+// Add a helper function to sanitize input schemas for Anthropic
+function sanitizeInputSchema(schema: any): any {
+  if (!schema || typeof schema !== 'object') {
+    return schema;
+  }
+  
+  // Create a copy of the schema
+  const sanitizedSchema = { ...schema };
+  
+  // Remove oneOf, allOf, anyOf at the top level
+  delete sanitizedSchema.oneOf;
+  delete sanitizedSchema.allOf;
+  delete sanitizedSchema.anyOf;
+  
+  // If we removed these operators, provide a basic schema structure
+  // This ensures we don't send an empty schema
+  if (Object.keys(sanitizedSchema).length === 0 || 
+      (schema.oneOf !== undefined || schema.allOf !== undefined || schema.anyOf !== undefined)) {
+    return {
+      type: "object",
+      properties: {},
+      description: schema.description || "Input for this tool"
+    };
+  }
+  
+  return sanitizedSchema;
+}
+
+// Cache for server ratings
+const ratingsCache = new Map<string, {
+  data: { average: number, count: number, score: number },
+  timestamp: number
+}>();
+const RATINGS_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours (increased from 30 minutes)
+
+// Track rate limit status to avoid hitting limits repeatedly
+const ratingApiState = {
+  isRateLimited: false,
+  rateLimitResetTime: 0,
+  rateLimitBackoff: 5 * 60 * 1000, // 5 minutes initial backoff
+  consecutiveErrors: 0
+};
+
+async function getWeightedRatingScore(serverId: string): Promise<{ average: number, count: number, score: number }> {
+  try {
+    // Check if we're currently rate limited
+    if (ratingApiState.isRateLimited && Date.now() < ratingApiState.rateLimitResetTime) {
+      console.log(`Rating API is rate limited, waiting until ${new Date(ratingApiState.rateLimitResetTime).toISOString()}`);
+      
+      // Use cached data if available
+      const cached = ratingsCache.get(serverId);
+      if (cached) {
+        console.log(`Using cached ratings for server ${serverId} due to rate limiting`);
+        return cached.data;
+      }
+      
+      // If no cache, return default values during rate limit
+      return { average: 0, count: 0, score: 0 };
+    }
+    
+    // Check if we have cached data that's not expired
+    const cached = ratingsCache.get(serverId);
+    const now = Date.now();
+    
+    if (cached && (now - cached.timestamp) < RATINGS_CACHE_TTL) {
+      console.log(`Using cached ratings for server ${serverId}`);
+      return cached.data;
+    }
+    
+    // If not in cache or expired, fetch from API
+    console.log(`Fetching ratings for server ${serverId}`);
+    const response = await axios.get(`https://nanda-registry.com/api/v1/servers/${serverId}/ratings`);
+    
+    // Reset rate limit state on successful request
+    ratingApiState.isRateLimited = false;
+    ratingApiState.consecutiveErrors = 0;
+    
+    const ratings = response.data?.data || [];
+
+    const count = ratings.length;
+    const total = ratings.reduce((sum: number, r: any) => sum + r.rating, 0);
+    const average = count > 0 ? total / count : 0;
+    const score = average * count;
+
+    const result = { average, count, score };
+    
+    // Cache the result
+    ratingsCache.set(serverId, {
+      data: result,
+      timestamp: now
+    });
+
+    return result;
+  } catch (error) {
+    console.error(`Failed to fetch ratings for server ${serverId}:`, error);
+    
+    // Check for rate limit error (429)
+    if (axios.isAxiosError(error) && error.response?.status === 429) {
+      // Set rate limit state with exponential backoff
+      ratingApiState.isRateLimited = true;
+      ratingApiState.consecutiveErrors++;
+      
+      // Increase backoff time exponentially with consecutive errors (max 1 hour)
+      const backoffTime = Math.min(
+        ratingApiState.rateLimitBackoff * Math.pow(2, ratingApiState.consecutiveErrors - 1),
+        60 * 60 * 1000
+      );
+      
+      ratingApiState.rateLimitResetTime = Date.now() + backoffTime;
+      console.warn(`Rate limited by ratings API. Backing off for ${backoffTime/1000} seconds until ${new Date(ratingApiState.rateLimitResetTime).toISOString()}`);
+    }
+    
+    // If we have cached data, use it even if expired
+    const cached = ratingsCache.get(serverId);
+    if (cached) {
+      console.log(`Using expired cached ratings for server ${serverId} due to fetch error`);
+      return cached.data;
+    }
+    
+    // Default values if no cached data available
+    return { average: 0, count: 0, score: 0 };
+  }
+}
+
 export function setupRoutes(app: Express, mcpManager: McpManager): void {
+  // Health check endpoint for deployment
+  app.get("/api/healthcheck", (req: Request, res: Response) => {
+    res.status(200).json({ status: "ok" });
+  });
+
   // Session endpoint
   app.post("/api/session", (req: Request, res: Response) => {
     console.log("API: /api/session called");
@@ -47,25 +176,6 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
     return sessionId;
   };
 
-
-  async function getWeightedRatingScore(serverId: string): Promise<{ average: number, count: number, score: number }> {
-    try {
-      const response = await axios.get(`https://nanda-registry.com/api/v1/servers/${serverId}/ratings`);
-      const ratings = response.data?.data || [];
-  
-      const count = ratings.length;
-      const total = ratings.reduce((sum: number, r: any) => sum + r.rating, 0);
-      const average = count > 0 ? total / count : 0;
-      const score = average * count;
-  
-      return { average, count, score };
-    } catch (error) {
-      console.error(`Failed to fetch ratings for server ${serverId}:`, error);
-      return { average: 0, count: 0, score: 0 };
-    }
-  }
-
-
   // Update the chat completion endpoint to ensure session
   app.post("/api/chat/completions", async (req: Request, res: Response) => {
     console.log("API: /api/chat/completions called");
@@ -90,7 +200,6 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
         apiKey,
       });
 
-
       //Mapping ratings to natural langauge
       const ratingTextMap = {
         1: "terrible",
@@ -100,45 +209,37 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
         5: "excellent",
       };
 
-
       // Fetch available tools if enabled
       let availableTools = [];
       if (tools) {
         try {
           const discoveredTools = await mcpManager.discoverTools(sessionId);
 
-          // availableTools = discoveredTools.map((tool) => {
-          //   const ratingLabel = ratingTextMap[tool.rating || 0] || "unrated";
-          //   const enhancedDescription = `${tool.description || ""} (This tool runs on a ${ratingLabel} server with a ${tool.rating || "?"}/5 rating.)`;
-
-          //   return{
-          //     name: tool.name,
-          //     description: enhancedDescription,
-          //     input_schema: tool.inputSchema,
-          //   }
-          // });
-
-          availableTools = await Promise.all(discoveredTools.map(async (tool) => {
-            const { average, count, score } = await getWeightedRatingScore(tool.serverId);
-            const ratingLabel = ratingTextMap[Math.round(average) || 0] || "unrated";
+          // Use existing rating from tool info instead of fetching for every tool
+          availableTools = discoveredTools.map((tool) => {
+            // Use the server rating that's already included in the tool info
+            const rating = tool.rating || 0;
+            const ratingLabel = ratingTextMap[Math.round(rating) || 0] || "unrated";
           
             const enhancedDescription = `${tool.description || ""} 
-          (This tool runs on a ${ratingLabel} server with a ${average.toFixed(1)}/5 rating from ${count} reviewers — score: ${score.toFixed(1)}.)`;
+            (This tool runs on a ${ratingLabel} server with a ${rating.toFixed(1)}/5 rating.)`;
           
+            // Sanitize the input schema before passing it to Anthropic
+            const sanitizedInputSchema = sanitizeInputSchema(tool.inputSchema);
+            
             return {
               name: tool.name,
               description: enhancedDescription,
-              input_schema: tool.inputSchema,
-              score, // temporarily add score for sorting
+              input_schema: sanitizedInputSchema,
+              score: rating, // Use simple rating for sorting
             };
-          }));
+          });
           
-          // Sort by score descending
+          // Sort by rating descending
           availableTools.sort((a, b) => (b.score || 0) - (a.score || 0));
           
           // Remove score field before sending to Claude
           availableTools = availableTools.map(({ score, ...tool }) => tool);
-
 
           // Preparing Claude to prefer higher rated tools 
           messages.unshift({
@@ -146,7 +247,7 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
             content: [
               {
                 type: "text",
-                text: "You are only being shown the highest-rated tools. Each includes the server's average rating, number of reviews, and a calculated reputation score. Prefer tools with higher scores — they are more trusted.",
+                text: "Hello! I'm here to help you with tools from various servers. When suggesting tools, I'll consider their ratings to provide you with the most reliable options. Tools with higher ratings are generally more trusted by the community.",
               },
             ],
           });
@@ -470,13 +571,10 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
     }
   });
 
-
-
   // Server registration endpoint
   app.post("/api/servers", async (req: Request, res: Response) => {
     console.log("API: /api/servers POST called with body:", JSON.stringify(req.body));
-    const { id, name, url, rating="unknown"} = req.body;
-    // const rating = getRating(id)  // !!!!ALYSSA use the rating api as another function
+    const { id, name, url, description, types, tags, verified, rating = 0 } = req.body;
 
     if (!id || !name || !url) {
       return res
@@ -485,11 +583,29 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
     }
 
     try {
+      // Try to get detailed rating, but don't fail if we can't
+      let ratingInfo = { average: rating, count: 0, score: 0 };
+      
+      try {
+        ratingInfo = await getWeightedRatingScore(id);
+        console.log(`📊 Server rating summary for ${name}: avg=${ratingInfo.average}, votes=${ratingInfo.count}, score=${ratingInfo.score}`);
+      } catch (ratingError) {
+        console.warn(`Unable to fetch rating for ${name}, using provided rating ${rating}:`, ratingError);
+      }
 
-      const { average, count, score } = await getWeightedRatingScore(id);
-      console.log(`📊 Server rating summary for ${name}: avg=${average}, votes=${count}, score=${score}`);
-
-      const success = await mcpManager.registerServer({ id, name, url, rating:average});
+      // Use the server rating we just got or fall back to the provided rating
+      const serverConfig = { 
+        id, 
+        name, 
+        url, 
+        description, 
+        types, 
+        tags, 
+        verified,
+        rating: ratingInfo.average || rating 
+      };
+      
+      const success = await mcpManager.registerServer(serverConfig);
 
       if (success) {
         res.json({ success: true });

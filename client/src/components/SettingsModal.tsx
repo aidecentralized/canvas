@@ -740,7 +740,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 color="whiteAlpha.800"
                 _hover={{ color: "white" }}
               >
-                NANDA Servers
+                Added Servers
               </Tab>
               <Tab
                 _selected={{ 
@@ -857,12 +857,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 </VStack>
               </TabPanel>
 
-              {/* NANDA Servers Tab */}
+              {/* Added Servers Tab */}
               <TabPanel>
                 <VStack spacing={4} align="stretch">
                   <Box>
                     <Heading size="sm" mb={3} color="whiteAlpha.900">
-                      Registered NANDA Servers
+                      Registered Added Servers
                     </Heading>
                     {nandaServers.length === 0 ? (
                       <Text color="whiteAlpha.600">No servers registered yet</Text>
@@ -1028,7 +1028,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                         {nandaServers.length === 0 ? (
                           <>
                             You need to register a Nanda server before tools will appear.
-                            Go to the "Nanda Servers" tab to add a server.
+                            Go to the "Added Servers" tab to add a server.
                           </>
                         ) : (
                           <>

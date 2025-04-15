@@ -9,6 +9,7 @@ import { ToolInfo, CredentialRequirement, ServerConfig } from "./types.js";
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
+import { RegistryClient } from "../registry/client.js";
 
 // Disable server-side persistence - we'll use browser-based storage instead
 // const STORAGE_DIR = process.env.MCP_STORAGE_DIR || path.join(process.cwd(), 'storage');
@@ -83,6 +84,7 @@ export interface McpManager {
   ) => Promise<boolean>;
   cleanup: () => Promise<void>;
   getSessionManager: () => SessionManager;
+  fetchRegistryServers: () => Promise<ServerConfig[]>;
 }
 
 // Remove local ServerConfig interface
@@ -128,6 +130,25 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
 
   // Track rate limit information for each server
   const rateLimits = new Map<string, RateLimitInfo>();
+
+  // Create a registry client instance
+  const registryClient = new RegistryClient(process.env.REGISTRY_URL || "https://nanda-registry.com", process.env.REGISTRY_API_KEY);
+
+  // Registry cache settings
+  const registryCache = {
+    servers: [] as ServerConfig[],
+    lastFetched: 0,
+    expiryMs: 60 * 60 * 1000, // 1 hour cache expiry
+    isValid: function() {
+      return this.servers.length > 0 && 
+             (Date.now() - this.lastFetched) < this.expiryMs;
+    },
+    update: function(servers: ServerConfig[]) {
+      this.servers = servers;
+      this.lastFetched = Date.now();
+      console.log(`Updated registry cache with ${servers.length} servers at ${new Date().toISOString()}`);
+    }
+  };
 
   const registerServer = async (serverConfig: ServerConfig): Promise<boolean> => {
     try {
@@ -629,6 +650,57 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
     connectedClients.clear();
   };
 
+  // Implementation of fetchRegistryServers method
+  const fetchRegistryServers = async (): Promise<ServerConfig[]> => {
+    try {
+      // Check if we have valid cached data
+      if (registryCache.isValid()) {
+        console.log(`Using cached registry data (${registryCache.servers.length} servers) from ${new Date(registryCache.lastFetched).toISOString()}`);
+        return registryCache.servers;
+      }
+
+      console.log("Fetching servers from NANDA registry...");
+      const registryServers = await registryClient.getAllServers(100);
+      console.log(`Fetched ${registryServers.length} servers from registry`);
+      
+      // If we got servers, update the cache
+      if (registryServers.length > 0) {
+        // Convert RegistryServer to ServerConfig
+        const serverConfigs: ServerConfig[] = registryServers.map(server => ({
+          id: server.id,
+          name: server.name,
+          url: server.url,
+          description: server.description,
+          types: server.types,
+          tags: server.tags,
+          verified: server.verified,
+          rating: server.rating
+        }));
+        
+        // Update the cache
+        registryCache.update(serverConfigs);
+        
+        return serverConfigs;
+      } else if (registryCache.servers.length > 0) {
+        // If new fetch returned empty but we have cached data, use the cache even if expired
+        console.log(`Registry API returned 0 servers. Using older cached data (${registryCache.servers.length} servers)`);
+        return registryCache.servers;
+      }
+      
+      return [];
+    } catch (error) {
+      console.error("Error fetching servers from registry:", error);
+      
+      // If there's an error but we have cached data, use it (even if expired)
+      if (registryCache.servers.length > 0) {
+        console.log(`Error fetching from registry. Using cached data (${registryCache.servers.length} servers)`);
+        return registryCache.servers;
+      }
+      
+      return [];
+    }
+  };
+
   // Disable auto-registration process - rely on client registrations instead
   // const autoRegisterServers = async () => {
   //   console.log(`Auto-registering ${servers.length} servers from storage...`);
@@ -652,5 +724,6 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
     setToolCredentials,
     cleanup,
     getSessionManager: () => sessionManager,
+    fetchRegistryServers
   };
 }
