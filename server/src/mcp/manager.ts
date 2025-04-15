@@ -109,6 +109,30 @@ export interface ServerConfig {
   url: string;
 }
 
+// Rate limiting data structures
+interface RateLimitInfo {
+  lastRequestTime: number;
+  requestCount: number;
+  isProcessing: boolean;
+  queue: Array<{
+    resolve: (value: any) => void;
+    reject: (error: any) => void;
+    toolName: string;
+    sessionId: string;
+    args: any;
+  }>;
+}
+
+// Rate limiting configuration
+const RATE_LIMIT_CONFIG = {
+  // Maximum requests per minute to a server
+  requestsPerMinute: 10,
+  // Minimum time between requests in ms (100ms = 0.1s)
+  minRequestSpacing: 500,
+  // Maximum queue length per server
+  maxQueueLength: 50,
+};
+
 export function setupMcpManager(io: SocketIoServer): McpManager {
   console.log("--- McpManager setup initiated ---");
   
@@ -124,6 +148,9 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
   // Cache of connected clients
   const connectedClients: Map<string, Client> = new Map();
 
+  // Track rate limit information for each server
+  const rateLimits = new Map<string, RateLimitInfo>();
+
   const registerServer = async (serverConfig: ServerConfig): Promise<void> => {
     console.log(`Registering server: ${JSON.stringify(serverConfig)}`);
     
@@ -132,7 +159,7 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
     if (existingIndex !== -1) {
       servers[existingIndex] = serverConfig;
     } else {
-      servers.push(serverConfig);
+    servers.push(serverConfig);
     }
     
     // Check if we already have a connection to this server
@@ -140,7 +167,7 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
       console.log(`Already connected to server ${serverConfig.id}, reusing existing connection`);
       return; // Skip reconnection if already connected
     }
-    
+
     try {
       // Create MCP client for this server using SSE transport
       const sseUrl = new URL(serverConfig.url);
@@ -199,12 +226,77 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
 
   // Discover all available tools for a session
   const discoverTools = async (sessionId: string): Promise<ToolInfo[]> => {
+    // Get all tools from the registry
     const tools = toolRegistry.getAllTools();
-    console.log(`Discovered tools for session ${sessionId}: ${JSON.stringify(tools.map(t => t.name))}`);
-    return tools;
+    
+    // For each tool, check if we have stored credentials and modify schemas accordingly
+    const modifiedTools = tools.map(toolInfo => {
+      const { serverId, name } = toolInfo;
+      
+      // Only process tools with credential requirements
+      if (toolInfo.credentialRequirements && toolInfo.credentialRequirements.length > 0) {
+        // Check if we have stored credentials for this tool
+        const credentials = sessionManager.getToolCredentials(sessionId, name, serverId);
+        
+        if (credentials) {
+          console.log(`🔑 Modifying schema for tool ${name} to mark credentials as optional since they are stored`);
+          
+          // Create a copy of the tool info to modify
+          const modifiedTool = { ...toolInfo };
+          
+          // If the tool has inputSchema, create a modified version
+          if (modifiedTool.inputSchema) {
+            // Create a deep copy of the input schema
+            const modifiedSchema = JSON.parse(JSON.stringify(modifiedTool.inputSchema));
+            
+            // If the schema has a __credentials property, mark it as not required
+            if (modifiedSchema.properties && modifiedSchema.properties.__credentials &&
+                modifiedSchema.required && modifiedSchema.required.includes('__credentials')) {
+              modifiedSchema.required = modifiedSchema.required.filter(req => req !== '__credentials');
+            }
+            
+            // For common credential parameters like api_key, make them optional too
+            if (modifiedSchema.required) {
+              toolInfo.credentialRequirements.forEach(cred => {
+                const credId = cred.id;
+                if (modifiedSchema.required.includes(credId)) {
+                  modifiedSchema.required = modifiedSchema.required.filter(req => req !== credId);
+                }
+              });
+            }
+            
+            // Update the description to indicate credentials are auto-injected
+            if (credentials) {
+              modifiedSchema.description = (modifiedSchema.description || '') + 
+                ' (Credentials are automatically applied from your saved settings)';
+              
+              // For each credential parameter, add a hint in the description
+              toolInfo.credentialRequirements.forEach(cred => {
+                const credId = cred.id;
+                if (modifiedSchema.properties[credId]) {
+                  modifiedSchema.properties[credId].description = 
+                    '✓ Using saved credential from your settings (you don\'t need to provide this)';
+                }
+              });
+            }
+            
+            // Update the modified schema
+            modifiedTool.inputSchema = modifiedSchema;
+          }
+          
+          return modifiedTool;
+        }
+      }
+      
+      // Return the original tool info if no changes needed
+      return toolInfo;
+    });
+    
+    console.log(`Discovered tools for session ${sessionId}: ${JSON.stringify(modifiedTools.map(t => t.name))}`);
+    return modifiedTools;
   };
 
-  // Execute a tool call
+  // Execute a tool call with rate limiting
   const executeToolCall = async (
     sessionId: string,
     toolName: string,
@@ -215,78 +307,267 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
       throw new Error(`Tool ${toolName} not found`);
     }
 
-    const { client, tool, serverId } = toolInfo;
-    const maxRetries = 2; // Maximum number of retries
-    let retries = 0;
-    let lastError: any = null;
+    const { serverId } = toolInfo;
 
-    while (retries <= maxRetries) {
-      try {
-        // MODIFIED: Skip all credential logic for all tools
-        console.log(`🔧 Executing tool ${toolName} without requiring credentials (attempt ${retries + 1}/${maxRetries + 1})`);
-        
-        // Execute the tool via MCP directly with the provided arguments
-        const result = await client.callTool({
-          name: toolName,
-          arguments: args,
-          // The timeout is set at client level already
-        });
-
-        // Add server info to the result for debugging
-        const enhancedResult = {
-          ...result,
-          content: Array.isArray(result.content) 
-            ? result.content
-            : [{ 
-                type: "text", 
-                text: `Tool result for ${toolName}`,
-              }],
-          serverInfo: {
-            id: serverId,
-            name: toolInfo.serverName || serverId,
-            tool: toolName
-          }
-        };
-
-        console.log(`✅ Tool ${toolName} executed successfully after ${retries} retries`);
-        return enhancedResult;
-      } catch (error) {
-        lastError = error;
-        console.error(`Error executing tool ${toolName} (attempt ${retries + 1}/${maxRetries + 1}):`, error);
-        
-        // If it's a timeout error, try again
-        if (error.code === -32001) { // This is the timeout error code
-          retries++;
-          if (retries <= maxRetries) {
-            const backoffMs = Math.min(1000 * Math.pow(2, retries), 10000); // Exponential backoff up to 10 seconds
-            console.log(`Retrying in ${backoffMs}ms...`);
-            await new Promise(resolve => setTimeout(resolve, backoffMs));
-            continue;
-          }
-        } else {
-          // For non-timeout errors, don't retry
-          break;
-        }
-      }
+    // Create rate limit info for this server if it doesn't exist
+    if (!rateLimits.has(serverId)) {
+      rateLimits.set(serverId, {
+        lastRequestTime: 0,
+        requestCount: 0,
+        isProcessing: false,
+        queue: [],
+      });
     }
-    
-    // If we're here, all retries failed
-    console.error(`All ${maxRetries + 1} attempts to execute tool ${toolName} failed.`);
 
-    // Create a fallback response for timeout errors
-    if (lastError && lastError.code === -32001) {
+    const rateLimit = rateLimits.get(serverId);
+
+    // Check if we've exceeded the queue limit
+    if (rateLimit.queue.length >= RATE_LIMIT_CONFIG.maxQueueLength) {
       return {
         content: [
           {
             type: "text",
-            text: `I'm sorry, but I couldn't get a response from the ${toolName} service. The request timed out after multiple attempts. This might be due to network issues or the service being temporarily unavailable.`,
+            text: `I'm sorry, but there are too many pending requests to this server. Please try again later.`
           }
-        ]
+        ],
+        serverInfo: {
+          id: serverId,
+          name: toolInfo.serverName || serverId,
+          tool: toolName
+        }
       };
     }
     
-    // For other errors, throw the last error
-    throw lastError;
+    // Add this request to the queue
+    return new Promise((resolve, reject) => {
+      rateLimit.queue.push({
+        resolve,
+        reject,
+        toolName,
+        sessionId,
+        args,
+      });
+      
+      // Start processing the queue if it's not already being processed
+      processQueue(serverId);
+    });
+  };
+
+  // Process queue for a server
+  const processQueue = async (serverId: string) => {
+    const rateLimit = rateLimits.get(serverId);
+    if (!rateLimit || rateLimit.queue.length === 0 || rateLimit.isProcessing) {
+      return;
+    }
+
+    rateLimit.isProcessing = true;
+
+    try {
+      // Calculate time to wait before next request
+      const now = Date.now();
+      const timeSinceLastRequest = now - rateLimit.lastRequestTime;
+      const timeToWait = Math.max(0, RATE_LIMIT_CONFIG.minRequestSpacing - timeSinceLastRequest);
+
+      if (timeToWait > 0) {
+        await new Promise(resolve => setTimeout(resolve, timeToWait));
+      }
+
+      // Get the next request from the queue
+      const nextRequest = rateLimit.queue.shift();
+      if (!nextRequest) {
+        rateLimit.isProcessing = false;
+        return;
+      }
+
+      // Update rate limit info
+      rateLimit.lastRequestTime = Date.now();
+      rateLimit.requestCount++;
+
+      // Execute the actual tool call
+      const toolInfo = toolRegistry.getToolInfo(nextRequest.toolName);
+      if (!toolInfo) {
+        nextRequest.reject(new Error(`Tool ${nextRequest.toolName} not found`));
+        rateLimit.isProcessing = false;
+        setTimeout(() => processQueue(serverId), 0);
+        return;
+      }
+
+      const { client, tool, serverId: toolServerId } = toolInfo;
+      const maxRetries = 2;
+      let retries = 0;
+      let lastError: any = null;
+
+      while (retries <= maxRetries) {
+        try {
+          // Check if the tool requires credentials
+          const requiresCredentials = toolInfo.credentialRequirements && 
+                                     toolInfo.credentialRequirements.length > 0;
+          
+          // Prepare args with credentials if needed
+          let callArgs = {...nextRequest.args};
+          
+          if (requiresCredentials) {
+            // Get credentials from session manager
+      const credentials = sessionManager.getToolCredentials(
+              nextRequest.sessionId,
+              nextRequest.toolName,
+              toolServerId
+            );
+            
+            if (credentials) {
+              console.log(`🔑 Using stored credentials for tool ${nextRequest.toolName}`);
+              
+              // Apply credentials to the args
+              // Check credential requirement IDs to determine how to inject credentials
+              toolInfo.credentialRequirements?.forEach(cred => {
+                const credId = cred.id;
+                if (credentials[credId]) {
+                  // Add the credential directly to args
+                  console.log(`Adding credential: ${credId}`);
+                  callArgs[credId] = credentials[credId];
+                }
+              });
+              
+              // If the tool expects a __credentials object, create it
+              const needsCredentialsObject = tool?.inputSchema?.properties?.__credentials;
+              if (needsCredentialsObject && !callArgs.__credentials) {
+                callArgs.__credentials = {};
+                toolInfo.credentialRequirements?.forEach(cred => {
+                  if (credentials[cred.id]) {
+                    callArgs.__credentials[cred.id] = credentials[cred.id];
+                  }
+                });
+              }
+              
+              // Add a flag to tell the AI that credentials are being automatically used
+              // This helps the LLM understand that credentials are already handled
+              callArgs.__injectedCredentials = true;
+            } else {
+              console.log(`⚠️ Tool ${nextRequest.toolName} requires credentials, but none were found in session ${nextRequest.sessionId}`);
+              
+              // If args don't contain credential parameters, ask the user to save credentials first
+              const missingCredentials = toolInfo.credentialRequirements?.filter(
+                cred => !callArgs[cred.id]
+              );
+              
+              if (missingCredentials && missingCredentials.length > 0) {
+                // Create a user-friendly error message
+                const missingList = missingCredentials.map(cred => cred.name || cred.id).join(", ");
+                console.log(`Missing required credentials: ${missingList}`);
+                
+                // Return a friendly message to the user instead of executing the tool
+                nextRequest.resolve({
+                  content: [
+                    {
+                      type: "text",
+                      text: `This tool requires the following credentials: ${missingList}. Please go to Settings > Tool Credentials to save your credentials first.`,
+                    }
+                  ],
+                  serverInfo: {
+                    id: serverId,
+                    name: toolInfo.serverName || serverId,
+                    tool: nextRequest.toolName
+                  }
+                });
+                
+                rateLimit.isProcessing = false;
+                setTimeout(() => processQueue(serverId), 0);
+                return;
+              }
+              // Otherwise continue with provided parameters
+            }
+          } else {
+            console.log(`🔧 Tool ${nextRequest.toolName} does not require credentials`);
+          }
+          
+          // Execute the tool via MCP with the prepared arguments
+          console.log(`🔧 Executing tool ${nextRequest.toolName} (attempt ${retries + 1}/${maxRetries + 1})`);
+      const result = await client.callTool({
+            name: nextRequest.toolName,
+            arguments: callArgs,
+            // The timeout is set at client level already
+          });
+
+          // Add server info to the result for debugging
+          const enhancedResult = {
+            ...result,
+            content: Array.isArray(result.content) 
+              ? result.content
+              : [{ 
+                  type: "text", 
+                  text: `Tool result for ${nextRequest.toolName}`,
+                }],
+            serverInfo: {
+              id: serverId,
+              name: toolInfo.serverName || serverId,
+              tool: nextRequest.toolName
+            }
+          };
+
+          // For ALL tool responses, add instructions for Claude to display the result verbatim
+          // This is universal and doesn't depend on tool naming conventions
+          if (enhancedResult.content && enhancedResult.content.length > 0) {
+            // Get the original result text
+            const originalResultText = enhancedResult.content[0].text;
+            
+            // Create a new enhanced content with clear instructions for Claude
+            enhancedResult.content = [
+              {
+                type: "text",
+                text: `TOOL RESULT:\n\n${originalResultText}\n\nNOTE TO CLAUDE: Display the above result exactly as shown without analysis or commentary. If this is an optimization or transformation, focus on showing the exact output.`
+              }
+            ];
+          }
+
+          console.log(`✅ Tool ${nextRequest.toolName} executed successfully after ${retries} retries`);
+          
+          // Resolve the promise with the result
+          nextRequest.resolve(enhancedResult);
+          break;
+    } catch (error) {
+          lastError = error;
+          console.error(`Error executing tool ${nextRequest.toolName} (attempt ${retries + 1}/${maxRetries + 1}):`, error);
+          
+          // If it's a timeout error, try again
+          if (error.code === -32001) { // This is the timeout error code
+            retries++;
+            if (retries <= maxRetries) {
+              const backoffMs = Math.min(1000 * Math.pow(2, retries), 10000); // Exponential backoff up to 10 seconds
+              console.log(`Retrying in ${backoffMs}ms...`);
+              await new Promise(resolve => setTimeout(resolve, backoffMs));
+              continue;
+            }
+          } else {
+            // For non-timeout errors, don't retry
+            break;
+          }
+        }
+      }
+      
+      // If we're here and all retries failed, reject the promise
+      if (retries > maxRetries) {
+        console.error(`All ${maxRetries + 1} attempts to execute tool ${nextRequest.toolName} failed.`);
+        
+        // Create a fallback response for timeout errors
+        if (lastError && lastError.code === -32001) {
+          nextRequest.resolve({
+            content: [
+              {
+                type: "text",
+                text: `I'm sorry, but I couldn't get a response from the ${nextRequest.toolName} service. The request timed out after multiple attempts. This might be due to network issues or the service being temporarily unavailable.`,
+              }
+            ]
+          });
+        } else {
+          // For other errors, reject with the last error
+          nextRequest.reject(lastError);
+        }
+      }
+    } finally {
+      // Mark as no longer processing and process the next item in the queue
+      rateLimit.isProcessing = false;
+      setTimeout(() => processQueue(serverId), 0);
+    }
   };
 
   // Get all available server configurations
@@ -297,16 +578,12 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
 
   // Get tools that require credentials
   const getToolsWithCredentialRequirements = (sessionId: string): ToolCredentialInfo[] => {
-    // TEMPORARILY DISABLED: Return empty array to prevent connection flooding
-    console.log(`[DISABLED] Tool credential check for session ${sessionId} - returning empty array`);
-    return [];
+    // Re-enabled credential checking
+    console.log(`Tool credential check for session ${sessionId}`);
     
-    // Original implementation commented out below
-    /*
     const tools = toolRegistry.getToolsWithCredentialRequirements();
     console.log(`Tools with credential requirements for session ${sessionId}: ${JSON.stringify(tools.map(t => t.toolName))}`);
     return tools;
-    */
   };
 
   // Set credentials for a tool

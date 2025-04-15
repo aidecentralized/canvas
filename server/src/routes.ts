@@ -228,7 +228,8 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
         ...finalResponse,
         serverInfo: serverUsed,
         requires_confirmation: !auto_proceed && toolUses.length > 0,
-        intermediateResponses: intermediateResponses
+        intermediateResponses: intermediateResponses,
+        toolsUsed: toolUses.length > 0
       };
 
       res.json(responseWithServerInfo);

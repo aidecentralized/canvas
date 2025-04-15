@@ -399,15 +399,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   };
 
   const loadToolsWithCredentials = async () => {
-    // TEMPORARILY DISABLED: We don't need tool credentials for current servers
-    // This prevents excessive SSE reconnections caused by credential checks
-    console.log("Tool credentials functionality temporarily disabled to prevent connection flooding");
-    setToolsWithCredentials([]);
-    setIsLoadingTools(false);
-    return;
-
-    // Original implementation commented out below
-    /*
+    // Re-enabled credential functionality now that backend is fixed
     // Clear any pending retries
     if (retryTimerRef.current) {
       clearTimeout(retryTimerRef.current);
@@ -428,7 +420,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       
       if (tools.length > 0) {
         console.log("Found tools with credentials:", tools);
-        setToolsWithCredentials(tools);
+      setToolsWithCredentials(tools);
         // Debug information to help troubleshoot
         setTimeout(debugToolCredentials, 100);
         setLoadAttempts(0); // Reset load attempts on success
@@ -477,7 +469,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         setIsLoadingTools(false);
       }
     }, 10000);
-    */
   };
 
   const handleSaveApiKey = () => {
@@ -863,11 +854,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                             <Box>
                               <Text fontWeight="bold" color="white">{server.name}</Text>
                               <Text fontSize="sm" color="whiteAlpha.700">
-                                ID: {server.id}
-                              </Text>
+                            ID: {server.id}
+                          </Text>
                               <Text fontSize="sm" color="whiteAlpha.700">
-                                URL: {server.url}
-                              </Text>
+                            URL: {server.url}
+                          </Text>
                             </Box>
                             <IconButton
                               aria-label="Remove server"
@@ -949,9 +940,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
               <TabPanel>
                 <VStack spacing={4} align="stretch">
                   <Flex justify="space-between" align="center">
-                    <Heading size="sm" mb={2}>
-                      Tool API Credentials
-                    </Heading>
+                  <Heading size="sm" mb={2}>
+                    Tool API Credentials
+                  </Heading>
                     <Button 
                       variant="ghost" 
                       size="sm"
@@ -977,11 +968,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                           color="primary.500"
                           size="xl"
                         />
-                        <Text color="gray.400">
+                    <Text color="gray.400">
                           {loadAttempts > 0 
                             ? `Loading tools (attempt ${loadAttempts+1}/4)...` 
                             : "Loading tools..."}
-                        </Text>
+                    </Text>
                       </VStack>
                     </Center>
                   ) : toolsWithCredentials.length === 0 ? (
@@ -992,7 +983,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                       alignItems="center"
                       justifyContent="center"
                       textAlign="center"
-                      borderRadius="md"
+                              borderRadius="md"
                       bg="rgba(0, 0, 0, 0.2)"
                       borderWidth="1px"
                       borderColor="blue.800"
@@ -1041,9 +1032,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                               </Heading>
                               <VStack spacing={4} align="stretch">
                                 {serverTools.map((tool) => (
-                                  <ToolCredentialForm
+                            <ToolCredentialForm
                                     key={`${tool.serverId}-${tool.toolName}`}
-                                    tool={tool}
+                              tool={tool}
                                     onSave={saveToolCredentials}
                                   />
                                 ))}
