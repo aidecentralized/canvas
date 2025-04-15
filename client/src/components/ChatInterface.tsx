@@ -13,7 +13,7 @@ import {
   Divider,
   Image,
 } from "@chakra-ui/react";
-import { FaRobot, FaUser, FaTools, FaRegLightbulb } from "react-icons/fa";
+import { FaRobot, FaUser, FaTools, FaRegLightbulb, FaNetworkWired } from "react-icons/fa";
 import { useChatContext } from "../contexts/ChatContext";
 import { useSettingsContext } from "../contexts/SettingsContext";
 import MessageInput from "./MessageInput";
@@ -67,22 +67,27 @@ const ChatInterface: React.FC = () => {
         justify="space-between"
       >
         <Flex align="center">
-          <Image 
-            src="/NANDA.png" 
-            alt="NANDA Logo" 
-            boxSize="32px" 
+          <Icon 
+            as={FaNetworkWired} 
+            boxSize="40px"
+            color="#ff4d4d"
             mr={3}
-            display="inline-block"
-            verticalAlign="middle"
           />
           <Text 
-            fontWeight="bold" 
-            fontSize="lg"
-            lineHeight="32px"
+            fontWeight="700" 
+            fontSize="xl"
+            bgGradient="linear(to-r, #ff4d4d, #ff9966)"
+            bgClip="text"
+            letterSpacing="tight"
+            lineHeight="40px"
             display="inline-flex"
             alignItems="center"
+            textShadow="0 0 10px rgba(255, 77, 77, 0.3)"
+            transform="translateY(6px)"
+            mt="-4px"
+            pb="6px"
           >
-            NANDA Chat Interface
+            NANDA Chat
           </Text>
         </Flex>
       </Flex>
@@ -129,8 +134,16 @@ const ChatInterface: React.FC = () => {
                 color="primary.400" 
                 mb={6}
               />
-              <Text fontSize="2xl" fontWeight="bold" mb={3} bgGradient="linear(to-r, primary.300, secondary.300)" bgClip="text">
-                Welcome to NANDA Chat Interface
+              <Text 
+                fontSize="3xl" 
+                fontWeight="bold" 
+                mb={3} 
+                bgGradient="linear(to-r, #ff4d4d, #ff9966)" 
+                bgClip="text"
+                letterSpacing="tight"
+                textShadow="0 0 10px rgba(255, 77, 77, 0.3)"
+              >
+                Welcome to NANDA Chat
               </Text>
               <Text mb={6} maxW="md" lineHeight="tall">
                 This AI uses the NANDA Protocol to enhance capabilities with
@@ -187,15 +200,9 @@ const ChatInterface: React.FC = () => {
                       mr={2}
                     >
                       {message.role === "user" ? (
-                        <Icon as={FaUser} boxSize={3} color="primary.500" />
+                        <Icon as={FaUser} boxSize={3} color="white" />
                       ) : (
-                        <Image 
-                          src="/NANDA.png" 
-                          alt="NANDA Logo" 
-                          boxSize="18px"
-                          display="inline-block"
-                          verticalAlign="middle"
-                        />
+                        <Icon as={FaNetworkWired} boxSize={4} color="#ff4d4d" />
                       )}
                     </Flex>
                   </Tooltip>
@@ -254,13 +261,7 @@ const ChatInterface: React.FC = () => {
                   boxSize="24px"
                   mr={2}
                 >
-                  <Image 
-                    src="/NANDA.png" 
-                    alt="NANDA Logo" 
-                    boxSize="18px"
-                    display="inline-block"
-                    verticalAlign="middle"
-                  />
+                  <Icon as={FaNetworkWired} boxSize={4} color="#ff4d4d" />
                 </Flex>
                 <Text fontWeight="bold">Assistant</Text>
               </Flex>
@@ -310,7 +311,16 @@ const ChatInterface: React.FC = () => {
         </VStack>
 
         {/* Activity Log Panel */}
-        <Box width="300px" bg="#25201F" p={2} borderLeft="1px solid" borderColor="#583030">
+        <Box 
+          width="300px" 
+          bg="#25201F" 
+          p={3} 
+          borderLeft="1px solid" 
+          borderColor="#583030"
+          display="flex"
+          flexDirection="column"
+          overflow="hidden"
+        >
           <ActivityLog />
         </Box>
       </Flex>

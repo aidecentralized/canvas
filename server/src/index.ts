@@ -85,9 +85,6 @@ process.on("SIGTERM", async () => {
   });
 });
 
-// Setup routes
-setupRoutes(app, mcpManager);
-
 // Start the server
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {

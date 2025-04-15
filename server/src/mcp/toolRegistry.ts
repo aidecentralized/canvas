@@ -40,25 +40,57 @@ export class ToolRegistry {
     for (const tool of tools) {
       console.log(`ToolRegistry: Processing tool: ${tool.name}`);
       
-      // Extract credential requirements if present in the tool definition
-      let credentialRequirements = (tool.inputSchema as any)?.__credentials?.required?.map(
-        (id: string): CredentialRequirement => {
-          const acquisition = (tool.inputSchema as any)?.__credentials?.acquisition;
-          return {
-            id,
-            name: id.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
-            description: (tool.inputSchema as any)?.__credentials?.descriptions?.[id],
-            acquisition: acquisition ? {
-              url: acquisition.url,
-              instructions: acquisition.instructions
-            } : undefined
-          };
-        }
-      );
+      // Restore credential requirements extraction
+      let credentialRequirements: CredentialRequirement[] = [];
       
-      console.log(`ToolRegistry: Tool ${tool.name} credentials: ${credentialRequirements ? JSON.stringify(credentialRequirements) : 'none'}`);
-
-      // Only set credential requirements if explicitly defined in the tool
+      // Extract credential requirements from the tool's input schema if available
+      if (tool.inputSchema && typeof tool.inputSchema === 'object') {
+        // Case 1: Check for __credentials object (traditional format)
+        if (tool.inputSchema.properties && 
+            typeof tool.inputSchema.properties === 'object' &&
+            tool.inputSchema.properties.__credentials) {
+          
+          const credentialsSchema = tool.inputSchema.properties.__credentials as any;
+          
+          if (credentialsSchema.properties && typeof credentialsSchema.properties === 'object') {
+            const credProps = credentialsSchema.properties;
+            
+            credentialRequirements = Object.entries(credProps).map(([id, schema]) => ({
+              id,
+              name: (schema as any).title || id,
+              description: (schema as any).description || '',
+              acquisition: (schema as any).acquisition || {}
+            }));
+            
+            console.log(`ToolRegistry: Found ${credentialRequirements.length} credential requirements in __credentials for tool ${tool.name}`);
+          }
+        } 
+        // Case 2: Check for common credential parameter names directly in properties
+        else if (tool.inputSchema.properties && typeof tool.inputSchema.properties === 'object') {
+          const commonCredentialNames = [
+            'api_key', 'apiKey', 'apikey', 'key', 'token', 'access_token', 
+            'accessToken', 'auth_token', 'authToken', 'password', 'secret', 
+            'client_id', 'clientId', 'client_secret', 'clientSecret'
+          ];
+          
+          for (const credName of commonCredentialNames) {
+            if (credName in tool.inputSchema.properties) {
+              const schema = tool.inputSchema.properties[credName] as any;
+              
+              credentialRequirements.push({
+                id: credName,
+                name: schema.title || `${credName.charAt(0).toUpperCase() + credName.slice(1).replace(/_/g, ' ')}`,
+                description: schema.description || `${credName} required for authentication`,
+                acquisition: schema.acquisition || {}
+              });
+              
+              console.log(`ToolRegistry: Found direct credential parameter '${credName}' for tool ${tool.name}`);
+            }
+          }
+        }
+      }
+      
+      // Register the tool with credential requirements if any
       this.tools.set(tool.name, {
         serverId,
         serverName,
@@ -68,7 +100,7 @@ export class ToolRegistry {
         rating,
       });
       
-      console.log(`ToolRegistry: Registered tool ${tool.name}`);
+      console.log(`ToolRegistry: Registered tool ${tool.name} with ${credentialRequirements.length} credential requirements`);
     }
   }
 
@@ -110,26 +142,20 @@ export class ToolRegistry {
     serverId: string;
     credentials: CredentialRequirement[];
   }[] {
-    console.log(`ToolRegistry: Checking for tools with credential requirements`);
-    console.log(`ToolRegistry: Current tools: ${JSON.stringify(Array.from(this.tools.entries()).map(([name, info]) => {
-      return {
-        name,
-        serverId: info.serverId,
-        hasCredentials: !!(info.credentialRequirements && info.credentialRequirements.length > 0)
-      }
-    }))}`);
+    // Restored credential requirements functionality
+    console.log(`ToolRegistry: getToolsWithCredentialRequirements: checking for tools with credential requirements`);
     
-    const tools = Array.from(this.tools.values())
-      .filter(info => info.credentialRequirements && info.credentialRequirements.length > 0)
-      .map(info => ({
+    const toolsWithCredentials = Array.from(this.tools.values())
+      .filter((info) => info.credentialRequirements && info.credentialRequirements.length > 0)
+      .map((info) => ({
         toolName: info.tool.name,
         serverName: info.serverName,
         serverId: info.serverId,
         credentials: info.credentialRequirements || []
       }));
       
-    console.log(`ToolRegistry: getToolsWithCredentialRequirements returning ${tools.length} tools: ${JSON.stringify(tools.map(t => t.toolName))}`);
-    return tools;
+    console.log(`ToolRegistry: Found ${toolsWithCredentials.length} tools requiring credentials`);
+    return toolsWithCredentials;
   }
 
   removeToolsByServerId(serverId: string): void {

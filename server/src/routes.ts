@@ -298,7 +298,8 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
         ...finalResponse,
         serverInfo: serverUsed,
         requires_confirmation: !auto_proceed && toolUses.length > 0,
-        intermediateResponses: intermediateResponses
+        intermediateResponses: intermediateResponses,
+        toolsUsed: toolUses.length > 0
       };
 
       res.json(responseWithServerInfo);
@@ -488,8 +489,13 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
       const { average, count, score } = await getWeightedRatingScore(id);
       console.log(`📊 Server rating summary for ${name}: avg=${average}, votes=${count}, score=${score}`);
 
-      await mcpManager.registerServer({ id, name, url, rating:average});
-      res.json({ success: true });
+      const success = await mcpManager.registerServer({ id, name, url, rating:average});
+
+      if (success) {
+        res.json({ success: true });
+      } else {
+        res.status(400).json({ success: false, message: "Failed to connect to server or discover tools" });
+      }
     } catch (error) {
       console.error("Error registering server:", error);
       res.status(500).json({

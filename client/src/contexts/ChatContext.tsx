@@ -305,7 +305,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         const responseData = await response.json();
         addLogEntry('info', 'Response received', { 
           statusCode: response.status,
-          hasTools: responseData.content?.some((item: any) => item.type === 'tool_use') || false,
+          hasTools: responseData.toolsUsed || responseData.content?.some((item: any) => item.type === 'tool_use') || false,
           serverInfo: responseData.serverInfo || 'Not provided'
         });
 
