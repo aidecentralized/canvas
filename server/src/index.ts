@@ -10,6 +10,10 @@ import { setupMcpManager } from "./mcp/manager.js";
 // Load environment variables
 config();
 
+// Registry settings
+const REGISTRY_URL = "https://nanda-registry.com";
+const REGISTRY_API_KEY = process.env.REGISTRY_API_KEY;
+
 // Create Express app
 const app = express();
 const server = http.createServer(app);
@@ -33,10 +37,41 @@ const io = new SocketIoServer(server, {
     methods: ["GET", "POST"],
     credentials: true,
   },
+  // Increased timeouts and improved reconnection settings
+  pingTimeout: 60000, // 60 seconds ping timeout
+  pingInterval: 25000, // 25 seconds ping interval
+  connectTimeout: 30000 // 30 seconds connect timeout
+});
+
+// Store io instance in app for access in routes
+app.set('io', io);
+
+// Socket.IO event handling
+io.on('connection', (socket) => {
+  console.log(`Socket connected: ${socket.id}`);
+  
+  socket.on('disconnect', () => {
+    console.log(`Socket disconnected: ${socket.id}`);
+  });
 });
 
 // Initialize MCP Manager
 const mcpManager = setupMcpManager(io);
+
+// Setup routes
+setupRoutes(app, mcpManager);
+
+// Load servers from registry on startup
+(async () => {
+  try {
+    // No need to fetch from registry as servers are loaded from local storage
+    console.log(`Loading servers from local storage...`);
+    const availableServers = mcpManager.getAvailableServers();
+    console.log(`Loaded ${availableServers.length} servers from local storage`);
+  } catch (error) {
+    console.error("Error loading servers:", error);
+  }
+})();
 
 // Handle graceful shutdown
 process.on("SIGTERM", async () => {
@@ -49,9 +84,6 @@ process.on("SIGTERM", async () => {
     process.exit(0);
   });
 });
-
-// Setup routes
-setupRoutes(app, mcpManager);
 
 // Start the server
 const PORT = process.env.PORT || 4000;

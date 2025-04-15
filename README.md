@@ -1,6 +1,6 @@
 # MCP Host
 
-MCP Host is a complete end-to-end implementation of a Model Context Protocol (MCP) host with an in-built MCP client. It provides a polished chat interface with built-in tool selection via the Model Context Protocol (MCP).
+MCP Host is a complete end-to-end implementation of a Model Context Protocol (MCP) host with an in-built MCP client. It provides a beautiful, polished chat interface with tool selection capabilities using MCP, and integrates with the MCP Registry for discovering available servers.
 
 ![MCP Host Screenshot](host_screenshot.png)
 
@@ -8,6 +8,7 @@ MCP Host is a complete end-to-end implementation of a Model Context Protocol (MC
 
 - **Chat Interface**: A modern UI with a glassmorphism design and crimson theme
 - **MCP Client Integration**: Discover and use tools from MCP servers
+- **Registry Integration**: Automatically connect to servers listed in the MCP Registry
 - **Anthropic API Integration**: Powered by Claude, one of the most capable AI assistants
 - **Server-Side Processing**: Backend handles communication with Anthropic and MCP servers
 - **Docker Support**: Easy local deployment with Docker
@@ -137,11 +138,12 @@ MCP Host consists of:
 - **Frontend**: React application with Chakra UI
 - **Backend**: Node.js server with Express
 - **MCP Client**: Integrated client using the official MCP SDK with SSE transport
+- **Registry Client**: Integration with the MCP Registry for server discovery
 
 The application follows a clean architecture pattern with separation of concerns:
 
 - **Client**: UI components, contexts for state management
-- **Server**: API endpoints, MCP integration, tool execution
+- **Server**: API endpoints, MCP integration, registry integration, tool execution
 - **Shared**: Common types used by both client and server
 
 ### Communication Protocol
@@ -152,6 +154,15 @@ MCP Host uses Server-Sent Events (SSE) for communication with MCP servers. This 
 2. **No File System Access Required**: Unlike stdio transport, SSE doesn't require access to the local file system
 3. **Multiple Connections**: Supports connections to multiple MCP servers simultaneously
 4. **Docker Friendly**: Works well in containerized environments since it doesn't rely on process spawning
+
+### Registry Integration
+
+MCP Host integrates with the [MCP Registry](https://nanda-registry.com) to automatically discover and connect to available MCP servers. Key features include:
+
+1. **Automatic Discovery**: Loads servers from the registry on startup
+2. **Filtering**: Ignores GitHub/GitLab URLs as they're likely source code repositories, not live servers
+3. **Manual Refresh**: Allows users to refresh the server list from the settings panel
+4. **Rich Metadata**: Displays server details including verification status, rating, types, and tags
 
 ## License
 

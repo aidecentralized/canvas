@@ -6,7 +6,7 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #0a0a0a;
+  background-color: #1c1921;
   overflow: hidden;
 }
 
@@ -41,12 +41,12 @@ code {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(220, 20, 60, 0.2);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(220, 20, 60, 0.3);
 }
 
 /* Typography */
@@ -65,12 +65,13 @@ p {
 }
 
 a {
-  color: #d11f41;
+  color: #dc143c;
   text-decoration: none;
 }
 
 a:hover {
   text-decoration: underline;
+  color: #ff6a8a;
 }
 
 /* Markdown styling */
@@ -83,7 +84,7 @@ pre {
 }
 
 blockquote {
-  border-left: 3px solid #d11f41;
+  border-left: 3px solid #dc143c;
   margin-left: 0;
   padding-left: 1em;
   color: rgba(255, 255, 255, 0.7);
@@ -91,9 +92,33 @@ blockquote {
 
 /* Glassmorphism utilities */
 .glass {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(42, 36, 41, 0.15);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+  box-shadow: 0 8px 32px 0 rgba(220, 20, 60, 0.15);
+}
+
+/* Network visualization styling */
+.network-node {
+  fill: #dc143c;
+  stroke: #ff6a8a;
+  transition: all 0.3s ease;
+}
+
+.network-link {
+  stroke: rgba(220, 20, 60, 0.6);
+  stroke-width: 1.5;
+}
+
+.network-node.active {
+  fill: #f3cc24;
+  stroke: #f9de72;
+  filter: drop-shadow(0 0 8px rgba(220, 20, 60, 0.5));
+}
+
+/* Button and UI element overrides */
+.btn-primary,
+.chakra-button {
+  transition: all 0.2s ease !important;
 }
