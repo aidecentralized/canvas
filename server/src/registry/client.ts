@@ -1,6 +1,6 @@
 // server/src/registry/client.ts
 import axios from "axios";
-import { ServerConfig } from "../mcp/manager.js";
+import { ServerConfig } from "../mcp/types.js";
 
 interface RegistryConfig {
   url: string;
@@ -67,6 +67,29 @@ export class RegistryClient {
     }
   }
 
+  async getAllServers(limit: number = 100): Promise<RegistryServer[]> {
+    try {
+      console.log("📡 Fetching all servers from /api/v1/servers");
+  
+      const headers: Record<string, string> = {};
+      if (this.apiKey) {
+        headers["Authorization"] = `Bearer ${this.apiKey}`;
+      }
+  
+      const response = await axios.get(`${this.baseUrl}/api/v1/servers`, {
+        headers,
+        params: { limit },
+      });
+  
+      const servers = response.data?.data || [];
+      console.log(`/servers returned ${servers.length} servers`);
+      return this.processServerResponse(servers);
+    } catch (error) {
+      console.error("Error fetching from /servers endpoint, falling back to /popular:", error);
+      return [];
+    }
+  }
+
   /**
    * Search for servers in the registry
    */
@@ -106,9 +129,8 @@ export class RegistryClient {
     }
   }
 
-  /**
-   * Get servers from the registry - tries search first, falls back to popular
-   */
+
+  //alyssa 
   async getServers(query?: string, options: any = {}): Promise<RegistryServer[]> {
     if (query) {
       const results = await this.searchServers(query, options);
@@ -116,8 +138,12 @@ export class RegistryClient {
         return results;
       }
     }
-    
-    // Fall back to popular servers if search returned no results
+  
+    // Try full /servers endpoint first
+    const all = await this.getAllServers(options.limit);
+    if (all.length > 0) return all;
+  
+    // Fall back to /popular if needed
     return this.getPopularServers(options.limit);
   }
 
