@@ -485,7 +485,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     setShowApiKey(!showApiKey);
   };
 
-  const handleAddServer = () => {
+  const handleAddServer = async () => {
     // Validate server info
     if (!newServer.id || !newServer.name || !newServer.url) {
       toast({
@@ -498,43 +498,75 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       return;
     }
 
-    // Validate URL
-    try {
-      new URL(newServer.url);
-    } catch (error) {
+    // Validate URL format
+  try {
+    new URL(newServer.url);
+  } catch (error) {
+    toast({
+      title: "Invalid URL",
+      description:
+        "Please enter a valid URL (e.g., http://localhost:3001/sse)",
+      status: "error",
+      duration: 3000,
+      isClosable: true,
+      position: "top",
+    });
+    return;
+  }
+
+    // 🌐 Send request to backend to actually register the server
+  try {
+    const res = await fetch("/api/servers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: newServer.id,
+        name: newServer.name,
+        url: newServer.url,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      // Register new server 
+      registerNandaServer({
+        id: newServer.id,
+        name: newServer.name,
+        url: newServer.url,
+      });
+
+      setNewServer({ id: "", name: "", url: "" });
+
       toast({
-        title: "Invalid URL",
-        description:
-          "Please enter a valid URL (e.g., http://localhost:3001/sse)",
-        status: "error",
+        title: "Server Added",
+        description: `Server "${newServer.name}" was successfully registered.`,
+        status: "success",
         duration: 3000,
         isClosable: true,
       });
-      return;
+    } else {
+      // Backend responded with failure
+      toast({
+        title: "Server Registration Failed",
+        description: data.message || "Failed to register server.",
+        status: "error",
+        duration: 4000,
+        isClosable: true,
+        position: "top",
+      });
     }
-
-    // Register new server
-    registerNandaServer({
-      id: newServer.id,
-      name: newServer.name,
-      url: newServer.url,
-    });
-
-    // Reset form
-    setNewServer({
-      id: "",
-      name: "",
-      url: "",
-    });
-
+  } catch (error) {
+    console.error("Error adding server:", error);
     toast({
-      title: "Server Added",
-      description: `Server "${newServer.name}" has been added`,
-      status: "success",
-      duration: 3000,
+      title: "Network Error",
+      description: "Could not connect to server. Check the URL.",
+      status: "error",
+      duration: 4000,
       isClosable: true,
     });
-  };
+  }
+};
 
   // Handle removing a server
   const handleRemoveServer = (serverId: string) => {

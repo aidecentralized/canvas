@@ -90,7 +90,7 @@ export interface McpManager {
     toolName: string,
     args: any
   ) => Promise<any>;
-  registerServer: (serverConfig: ServerConfig) => Promise<void>;
+  registerServer: (serverConfig: ServerConfig) => Promise<boolean>;
   getAvailableServers: () => ServerConfig[];
   getToolsWithCredentialRequirements: (sessionId: string) => ToolCredentialInfo[];
   setToolCredentials: (
@@ -168,6 +168,7 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
       return; // Skip reconnection if already connected
     }
 
+  const registerServer = async (serverConfig: ServerConfig): Promise<boolean> => {
     try {
       // Create MCP client for this server using SSE transport
       const sseUrl = new URL(serverConfig.url);
@@ -190,7 +191,6 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
       });
 
       await client.connect(transport);
-      console.log(`Successfully connected to server: ${serverConfig.id}`);
 
       // Fetch available tools from the server
       const toolsResult = await client.listTools();
@@ -206,21 +206,35 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
         );
       }
 
+      // Register tools in our registry
+      toolRegistry.registerTools(serverConfig.id, client, toolsResult.tools);
+
       // Store the connected client for later use
       connectedClients.set(serverConfig.id, client);
+      servers.push(serverConfig);
 
       console.log(
         `Registered server ${serverConfig.name} with ${
-          toolsResult?.tools?.length || 0
+          toolsResult?.tools?.length
         } tools`
       );
+
+      // Successful Registration
+      return true;
     } catch (error) {
       console.error(
-        `Failed to connect to MCP server ${serverConfig.name}:`,
+        `Failed to register server ${serverConfig.name}:`,
         error
       );
-      // We don't remove the server from our list anymore since it's persistent
-      // Just log the error and continue
+
+      // Clean up in-memory state
+      const index = servers.findIndex((s) => s.id === serverConfig.id);
+      if (index !== -1) {
+        servers.splice(index, 1);
+      }
+
+      // Failed registration
+      return false;
     }
   };
 

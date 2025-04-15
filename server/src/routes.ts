@@ -412,8 +412,16 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
     }
 
     try {
-      await mcpManager.registerServer({ id, name, url });
-      res.json({ success: true });
+      // await mcpManager.registerServer({ id, name, url });
+      // res.json({ success: true });
+      const success = await mcpManager.registerServer({ id, name, url });
+
+      if (success) {
+        res.json({ success: true });
+      } else {
+        res.status(400).json({ success: false, message: "Failed to connect to server or discover tools" });
+      }
+
     } catch (error) {
       console.error("Error registering server:", error);
       res.status(500).json({
