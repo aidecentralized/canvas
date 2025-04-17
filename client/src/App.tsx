@@ -1,12 +1,14 @@
 // client/src/App.tsx
 import React, { useState } from "react";
-import { ChakraProvider, Box, Flex } from "@chakra-ui/react";
+import { ChakraProvider, Box, Flex, Container, VStack } from "@chakra-ui/react";
 import { theme } from "./theme";
 import { ChatProvider } from "./contexts/ChatContext";
 import { SettingsProvider } from "./contexts/SettingsContext";
+import { ResourceProvider } from "./contexts/ResourceContext";
 import ChatInterface from "./components/ChatInterface";
 import SettingsModal from "./components/SettingsModal";
 import Header from "./components/Header";
+import ActivityLog from "./components/ActivityLog";
 
 function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -22,49 +24,44 @@ function App() {
   return (
     <ChakraProvider theme={theme}>
       <SettingsProvider>
-        <ChatProvider>
-          <Box
-            minH="100vh"
-            bgGradient="linear(to-b, #16161e, #1e1e2f)"
-            bgImage="radial-gradient(circle at 10% 20%, rgba(90, 26, 255, 0.1) 0%, transparent 20%), radial-gradient(circle at 90% 80%, rgba(0, 201, 255, 0.1) 0%, transparent 20%)"
-            bgSize="cover"
-            bgPosition="center"
-            bgRepeat="no-repeat"
-            display="flex"
-            flexDirection="column"
-            position="relative"
-            overflow="hidden"
-            _before={{
-              content: '""',
-              position: "absolute",
-              top: 0,
-              right: 0,
-              bottom: 0,
-              left: 0,
-              bg: "linear-gradient(180deg, rgba(22, 22, 30, 0.5) 0%, rgba(26, 27, 38, 0.2) 100%)",
-              zIndex: 0,
-            }}
-          >
-            <Header onOpenSettings={handleOpenSettings} />
-
-            <Flex
-              flex="1"
-              direction="column"
-              align="center"
-              justify="center"
-              p={4}
+        <ResourceProvider>
+          <ChatProvider>
+            <Box
+              bgImage="url('NANDA.png')"
+              bgPosition="right -100px bottom -100px"
+              bgRepeat="no-repeat"
+              bgSize="400px"
+              minH="100vh"
+              bg="dark.100"
               position="relative"
-              zIndex={1}
+              overflow="hidden"
             >
-              <ChatInterface />
-            </Flex>
-
-            <SettingsModal
-              isOpen={isSettingsOpen}
-              onClose={handleCloseSettings}
-            />
-          </Box>
-        </ChatProvider>
+              <Header onOpenSettings={handleOpenSettings} />
+              <Container maxW="container.xl" pt="80px" pb="4">
+                <Flex
+                  gap={4}
+                  flexDir={{ base: "column", lg: "row" }}
+                  alignItems="flex-start"
+                >
+                  <ChatInterface />
+                  <Box
+                    w={{ base: "100%", lg: "300px" }}
+                    display={{ base: "none", lg: "block" }}
+                    flexShrink={0}
+                  >
+                    <VStack spacing={4} position="sticky" top="90px">
+                      <ActivityLog />
+                    </VStack>
+                  </Box>
+                </Flex>
+              </Container>
+              <SettingsModal
+                isOpen={isSettingsOpen}
+                onClose={handleCloseSettings}
+              />
+            </Box>
+          </ChatProvider>
+        </ResourceProvider>
       </SettingsProvider>
     </ChakraProvider>
   );

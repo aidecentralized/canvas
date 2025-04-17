@@ -688,4 +688,124 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
       });
     }
   });
+
+  // Add resource-related endpoints
+  // List resources
+  app.get("/api/resources", async (req: Request, res: Response) => {
+    console.log("API: /api/resources called");
+    try {
+      const rawSessionId = (req.headers["x-session-id"] as string) || "";
+      const sessionId = ensureSession(rawSessionId);
+      const serverId = req.query.serverId as string;
+      
+      const resources = await mcpManager.listResources(sessionId, serverId);
+      console.log(`API: /api/resources found ${resources.length} resources`);
+      res.json({ resources });
+    } catch (error) {
+      console.error("Error listing resources:", error);
+      res.status(500).json({
+        error: error.message || "An error occurred while listing resources",
+      });
+    }
+  });
+
+  // List resource templates
+  app.get("/api/resources/templates", async (req: Request, res: Response) => {
+    console.log("API: /api/resources/templates called");
+    try {
+      const rawSessionId = (req.headers["x-session-id"] as string) || "";
+      const sessionId = ensureSession(rawSessionId);
+      const serverId = req.query.serverId as string;
+      
+      const templates = await mcpManager.listResourceTemplates(sessionId, serverId);
+      console.log(`API: /api/resources/templates found ${templates.length} templates`);
+      res.json({ templates });
+    } catch (error) {
+      console.error("Error listing resource templates:", error);
+      res.status(500).json({
+        error: error.message || "An error occurred while listing resource templates",
+      });
+    }
+  });
+
+  // Read resource content
+  app.get("/api/resources/read", async (req: Request, res: Response) => {
+    console.log("API: /api/resources/read called");
+    try {
+      const rawSessionId = (req.headers["x-session-id"] as string) || "";
+      const sessionId = ensureSession(rawSessionId);
+      const uri = req.query.uri as string;
+      
+      if (!uri) {
+        return res.status(400).json({ error: "Resource URI is required" });
+      }
+      
+      const contents = await mcpManager.readResource(sessionId, uri);
+      console.log(`API: /api/resources/read found ${contents.length} content items for URI ${uri}`);
+      res.json({ contents });
+    } catch (error) {
+      console.error("Error reading resource:", error);
+      res.status(500).json({
+        error: error.message || "An error occurred while reading resource",
+      });
+    }
+  });
+
+  // Subscribe to resource updates
+  app.post("/api/resources/subscribe", async (req: Request, res: Response) => {
+    console.log("API: /api/resources/subscribe called");
+    try {
+      const rawSessionId = (req.headers["x-session-id"] as string) || "";
+      const sessionId = ensureSession(rawSessionId);
+      const { uri } = req.body;
+      
+      if (!uri) {
+        return res.status(400).json({ error: "Resource URI is required" });
+      }
+      
+      const success = await mcpManager.subscribeToResource(sessionId, uri);
+      if (success) {
+        console.log(`API: Successfully subscribed to resource ${uri}`);
+        res.json({ success });
+      } else {
+        res.status(400).json({
+          error: "Failed to subscribe to resource"
+        });
+      }
+    } catch (error) {
+      console.error("Error subscribing to resource:", error);
+      res.status(500).json({
+        error: error.message || "An error occurred while subscribing to resource",
+      });
+    }
+  });
+
+  // Unsubscribe from resource updates
+  app.post("/api/resources/unsubscribe", async (req: Request, res: Response) => {
+    console.log("API: /api/resources/unsubscribe called");
+    try {
+      const rawSessionId = (req.headers["x-session-id"] as string) || "";
+      const sessionId = ensureSession(rawSessionId);
+      const { uri } = req.body;
+      
+      if (!uri) {
+        return res.status(400).json({ error: "Resource URI is required" });
+      }
+      
+      const success = await mcpManager.unsubscribeFromResource(sessionId, uri);
+      if (success) {
+        console.log(`API: Successfully unsubscribed from resource ${uri}`);
+        res.json({ success });
+      } else {
+        res.status(400).json({
+          error: "Failed to unsubscribe from resource"
+        });
+      }
+    } catch (error) {
+      console.error("Error unsubscribing from resource:", error);
+      res.status(500).json({
+        error: error.message || "An error occurred while unsubscribing from resource",
+      });
+    }
+  });
 }

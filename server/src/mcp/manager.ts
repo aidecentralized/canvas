@@ -5,11 +5,12 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { ToolRegistry } from "./toolRegistry.js";
 import { SessionManager } from "./sessionManager.js";
-import { ToolInfo, CredentialRequirement, ServerConfig } from "./types.js";
+import { ToolInfo, CredentialRequirement, ServerConfig, Resource, ResourceTemplate, ResourceContent } from "./types.js";
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
 import { RegistryClient } from "../registry/client.js";
+import { z } from 'zod';
 
 // Disable server-side persistence - we'll use browser-based storage instead
 // const STORAGE_DIR = process.env.MCP_STORAGE_DIR || path.join(process.cwd(), 'storage');
@@ -82,6 +83,11 @@ export interface McpManager {
     serverId: string, 
     credentials: Record<string, string>
   ) => Promise<boolean>;
+  listResources: (sessionId: string, serverId?: string) => Promise<Resource[]>;
+  listResourceTemplates: (sessionId: string, serverId?: string) => Promise<ResourceTemplate[]>;
+  readResource: (sessionId: string, uri: string) => Promise<ResourceContent[]>;
+  subscribeToResource: (sessionId: string, uri: string) => Promise<boolean>;
+  unsubscribeFromResource: (sessionId: string, uri: string) => Promise<boolean>;
   cleanup: () => Promise<void>;
   getSessionManager: () => SessionManager;
   fetchRegistryServers: () => Promise<ServerConfig[]>;
@@ -150,6 +156,21 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
     }
   };
 
+  // Track resource subscriptions
+  const resourceSubscriptions: Map<string, Set<string>> = new Map(); // Map of sessionId -> Set of URIs
+
+  // Helper function to get an MCP client by server ID
+  const getClientByServerId = (serverId: string): Client | undefined => {
+    return connectedClients.get(serverId);
+  };
+
+  // Extract server ID from resource URI (e.g., "server:///resource" -> "server")
+  const getServerIdFromUri = (uri: string): string | null => {
+    // Check if it's a server URI format (server:///path)
+    const match = uri.match(/^([^:]+):\/\//);
+    return match ? match[1] : null;
+  };
+
   const registerServer = async (serverConfig: ServerConfig): Promise<boolean> => {
     try {
       console.log(`Registering server: ${JSON.stringify(serverConfig)}`);
@@ -195,6 +216,10 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
           initialDelay: 2000, // Start with 2 seconds delay (increased from 1)
           maxDelay: 20000,    // Max 20 second delay (increased from 10)
           backoffFactor: 2    // Exponential backoff factor
+        },
+        // Enable resource capabilities
+        capabilities: {
+          resources: {}
         }
       });
 
@@ -207,24 +232,74 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
 
       // Ensure the server has tools
       if (!toolsResult?.tools || toolsResult.tools.length === 0) {
-        throw new Error("No tools discovered on MCP server");
+        console.log(`No tools discovered on MCP server ${serverConfig.id}, but continuing anyway as it may provide resources`);
+      } else {
+        // Register tools in our registry
+        toolRegistry.registerTools(
+          serverConfig.id,
+          serverConfig.name,
+          serverConfig.rating ?? 0,
+          client,
+          toolsResult.tools
+        );
       }
 
-      // Register tools in our registry
-      toolRegistry.registerTools(
-        serverConfig.id,
-        serverConfig.name,
-        serverConfig.rating ?? 0,
-        client,
-        toolsResult.tools
-      );
+      // Try to fetch available resources
+      try {
+        // Call resources/list endpoint
+        const resourcesResult = await client.request(
+          {
+            method: "resources/list",
+            params: {}
+          },
+          // Add the schema parameter using Zod
+          z.object({
+            resources: z.array(z.object({}).passthrough()).optional(),
+            templates: z.array(z.object({}).passthrough()).optional()
+          })
+        );
+
+        if (resourcesResult.resources && Array.isArray(resourcesResult.resources)) {
+          console.log(`Resources discovered: ${JSON.stringify(resourcesResult.resources.map(r => r.name))}`);
+          // Register direct resources with type assertion to match Resource[] interface
+          toolRegistry.registerResources(serverConfig.id, resourcesResult.resources as Resource[]);
+        }
+
+        if (resourcesResult.templates && Array.isArray(resourcesResult.templates)) {
+          console.log(`Resource templates discovered: ${JSON.stringify(resourcesResult.templates.map(t => t.name))}`);
+          // Register resource templates with type assertion to match ResourceTemplate[] interface
+          toolRegistry.registerResourceTemplates(serverConfig.id, resourcesResult.templates as ResourceTemplate[]);
+        }
+      } catch (error) {
+        console.log(`No resources available on server ${serverConfig.id} or resources/list endpoint not supported: ${error.message}`);
+      }
+
+      // Set up resource update notifications listener
+      transport.onNotification("notifications/resources/list_changed", () => {
+        console.log(`Resource list changed notification from server: ${serverConfig.id}`);
+        
+        // Re-fetch resources when the list changes
+        refreshServerResources(serverConfig.id, client);
+        
+        // Notify clients via Socket.IO
+        io.emit('resources_list_changed', { serverId: serverConfig.id });
+      });
+
+      // Set up resource content update notifications
+      transport.onNotification("notifications/resources/updated", (notification) => {
+        const { uri } = notification;
+        console.log(`Resource updated notification for URI: ${uri} from server: ${serverConfig.id}`);
+        
+        // Notify clients via Socket.IO
+        io.emit('resource_updated', { serverId: serverConfig.id, uri });
+      });
 
       // Store the connected client for later use
       connectedClients.set(serverConfig.id, client);
 
       console.log(
         `Registered server ${serverConfig.name} with ${
-          toolsResult?.tools?.length
+          toolsResult?.tools?.length || 0
         } tools`
       );
 
@@ -244,6 +319,48 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
 
       // Failed registration
       return false;
+    }
+  };
+
+  // Refresh resources from a server
+  const refreshServerResources = async (serverId: string, client?: Client): Promise<void> => {
+    try {
+      // Get client if not provided
+      if (!client) {
+        client = connectedClients.get(serverId);
+        if (!client) {
+          console.error(`Cannot refresh resources: No client found for server ${serverId}`);
+          return;
+        }
+      }
+
+      // Remove existing resources for this server
+      toolRegistry.removeResourcesByServerId(serverId);
+
+      // Fetch resources
+      const resourcesResult = await client.request(
+        {
+          method: "resources/list",
+          params: {}
+        },
+        // Add the schema parameter using Zod
+        z.object({
+          resources: z.array(z.object({}).passthrough()).optional(),
+          templates: z.array(z.object({}).passthrough()).optional()
+        })
+      );
+
+      if (resourcesResult.resources && Array.isArray(resourcesResult.resources)) {
+        toolRegistry.registerResources(serverId, resourcesResult.resources as Resource[]);
+      }
+
+      if (resourcesResult.templates && Array.isArray(resourcesResult.templates)) {
+        toolRegistry.registerResourceTemplates(serverId, resourcesResult.templates as ResourceTemplate[]);
+      }
+
+      console.log(`Refreshed resources for server ${serverId}: ${resourcesResult.resources?.length || 0} resources, ${resourcesResult.templates?.length || 0} templates`);
+    } catch (error) {
+      console.error(`Error refreshing resources for server ${serverId}:`, error);
     }
   };
 
@@ -637,6 +754,163 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
     }
   };
 
+  // List available resources
+  const listResources = async (sessionId: string, serverId?: string): Promise<Resource[]> => {
+    console.log(`Listing resources for session ${sessionId}${serverId ? ` from server ${serverId}` : ''}`);
+    
+    try {
+      if (serverId) {
+        // Get resources for specific server
+        return toolRegistry.getResourcesByServerId(serverId);
+      } else {
+        // Get all resources from all servers
+        return toolRegistry.getAllResources();
+      }
+    } catch (error) {
+      console.error(`Error listing resources:`, error);
+      return [];
+    }
+  };
+
+  // List available resource templates
+  const listResourceTemplates = async (sessionId: string, serverId?: string): Promise<ResourceTemplate[]> => {
+    console.log(`Listing resource templates for session ${sessionId}${serverId ? ` from server ${serverId}` : ''}`);
+    
+    try {
+      if (serverId) {
+        // Get templates for specific server
+        return toolRegistry.getResourceTemplatesByServerId(serverId);
+      } else {
+        // Get all templates from all servers
+        return toolRegistry.getAllResourceTemplates();
+      }
+    } catch (error) {
+      console.error(`Error listing resource templates:`, error);
+      return [];
+    }
+  };
+
+  // Read resource content
+  const readResource = async (sessionId: string, uri: string): Promise<ResourceContent[]> => {
+    console.log(`Reading resource ${uri} for session ${sessionId}`);
+    
+    // Extract server ID from URI
+    const serverId = getServerIdFromUri(uri);
+    if (!serverId) {
+      throw new Error(`Invalid resource URI format: ${uri}. Expected format: server:///path`);
+    }
+    
+    // Get client for this server
+    const client = getClientByServerId(serverId);
+    if (!client) {
+      throw new Error(`No client available for server ${serverId}`);
+    }
+    
+    try {
+      // Call resources/read endpoint
+      const result = await client.request(
+        {
+          method: "resources/read",
+          params: { uri }
+        },
+        // Add the schema parameter using Zod
+        z.object({
+          contents: z.array(z.object({}).passthrough())
+        })
+      );
+      
+      if (!result.contents || !Array.isArray(result.contents)) {
+        throw new Error(`Invalid response from resources/read: contents array missing or not an array`);
+      }
+      
+      console.log(`Successfully read resource ${uri}: ${result.contents.length} content items`);
+      return result.contents;
+    } catch (error) {
+      console.error(`Error reading resource ${uri}:`, error);
+      throw error;
+    }
+  };
+
+  // Subscribe to resource updates
+  const subscribeToResource = async (sessionId: string, uri: string): Promise<boolean> => {
+    console.log(`Subscribing to resource ${uri} for session ${sessionId}`);
+    
+    // Extract server ID from URI
+    const serverId = getServerIdFromUri(uri);
+    if (!serverId) {
+      throw new Error(`Invalid resource URI format: ${uri}. Expected format: server:///path`);
+    }
+    
+    // Get client for this server
+    const client = getClientByServerId(serverId);
+    if (!client) {
+      throw new Error(`No client available for server ${serverId}`);
+    }
+    
+    try {
+      // Call resources/subscribe endpoint with schema parameter
+      await client.request(
+        {
+          method: "resources/subscribe",
+          params: { uri }
+        },
+        // Add proper Zod schema
+        z.object({}).passthrough()
+      );
+      
+      // Track the subscription
+      if (!resourceSubscriptions.has(sessionId)) {
+        resourceSubscriptions.set(sessionId, new Set());
+      }
+      
+      resourceSubscriptions.get(sessionId)?.add(uri);
+      
+      console.log(`Successfully subscribed to resource ${uri} for session ${sessionId}`);
+      return true;
+    } catch (error) {
+      console.error(`Error subscribing to resource ${uri}:`, error);
+      return false;
+    }
+  };
+
+  // Unsubscribe from resource updates
+  const unsubscribeFromResource = async (sessionId: string, uri: string): Promise<boolean> => {
+    console.log(`Unsubscribing from resource ${uri} for session ${sessionId}`);
+    
+    // Extract server ID from URI
+    const serverId = getServerIdFromUri(uri);
+    if (!serverId) {
+      throw new Error(`Invalid resource URI format: ${uri}. Expected format: server:///path`);
+    }
+    
+    // Get client for this server
+    const client = getClientByServerId(serverId);
+    if (!client) {
+      throw new Error(`No client available for server ${serverId}`);
+    }
+    
+    try {
+      // Call resources/unsubscribe endpoint with schema parameter
+      await client.request(
+        {
+          method: "resources/unsubscribe",
+          params: { uri }
+        },
+        // Add proper Zod schema
+        z.object({}).passthrough()
+      );
+      
+      // Remove from tracked subscriptions
+      resourceSubscriptions.get(sessionId)?.delete(uri);
+      
+      console.log(`Successfully unsubscribed from resource ${uri} for session ${sessionId}`);
+      return true;
+    } catch (error) {
+      console.error(`Error unsubscribing from resource ${uri}:`, error);
+      return false;
+    }
+  };
+
   // Clean up connections when closing
   const cleanup = async (): Promise<void> => {
     for (const [serverId, client] of connectedClients.entries()) {
@@ -722,6 +996,11 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
     getAvailableServers,
     getToolsWithCredentialRequirements,
     setToolCredentials,
+    listResources,
+    listResourceTemplates,
+    readResource,
+    subscribeToResource,
+    unsubscribeFromResource,
     cleanup,
     getSessionManager: () => sessionManager,
     fetchRegistryServers

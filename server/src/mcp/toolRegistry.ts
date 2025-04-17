@@ -31,8 +31,32 @@ interface ToolInfo {
   rating?: number;
 }
 
+// Resource interfaces based on MCP specification
+interface Resource {
+  uri: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+}
+
+interface ResourceTemplate {
+  uriTemplate: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+}
+
+interface ResourceContent {
+  uri: string;
+  mimeType?: string;
+  text?: string;
+  blob?: string;
+}
+
 export class ToolRegistry {
   private tools: Map<string, ToolInfo> = new Map();
+  private resources: Map<string, Resource> = new Map();
+  private resourceTemplates: Map<string, ResourceTemplate> = new Map();
 
   registerTools(serverId: string, serverName: string, rating: number, client: Client, tools: Tool[]): void {
     console.log(`ToolRegistry: Registering ${tools.length} tools from server ID: ${serverId}`);
@@ -104,6 +128,28 @@ export class ToolRegistry {
     }
   }
 
+  registerResources(serverId: string, resources: Resource[]): void {
+    console.log(`ToolRegistry: Registering ${resources.length} resources from server ID: ${serverId}`);
+    
+    for (const resource of resources) {
+      // Store server ID as part of the key to avoid conflicts between servers
+      const resourceKey = `${serverId}:${resource.uri}`;
+      this.resources.set(resourceKey, resource);
+      console.log(`ToolRegistry: Registered resource ${resource.name} with URI ${resource.uri}`);
+    }
+  }
+
+  registerResourceTemplates(serverId: string, templates: ResourceTemplate[]): void {
+    console.log(`ToolRegistry: Registering ${templates.length} resource templates from server ID: ${serverId}`);
+    
+    for (const template of templates) {
+      // Store server ID as part of the key to avoid conflicts between servers
+      const templateKey = `${serverId}:${template.uriTemplate}`;
+      this.resourceTemplates.set(templateKey, template);
+      console.log(`ToolRegistry: Registered resource template ${template.name} with URI template ${template.uriTemplate}`);
+    }
+  }
+
   getToolInfo(toolName: string): ToolInfo | undefined {
     return this.tools.get(toolName);
   }
@@ -121,6 +167,44 @@ export class ToolRegistry {
     
     console.log(`ToolRegistry: getAllTools returning ${tools.length} tools`);
     return tools;
+  }
+
+  getAllResources(): Resource[] {
+    const resources = Array.from(this.resources.values());
+    console.log(`ToolRegistry: getAllResources returning ${resources.length} resources`);
+    return resources;
+  }
+
+  getAllResourceTemplates(): ResourceTemplate[] {
+    const templates = Array.from(this.resourceTemplates.values());
+    console.log(`ToolRegistry: getAllResourceTemplates returning ${templates.length} templates`);
+    return templates;
+  }
+
+  getResourcesByServerId(serverId: string): Resource[] {
+    const resources: Resource[] = [];
+    
+    this.resources.forEach((resource, key) => {
+      if (key.startsWith(`${serverId}:`)) {
+        resources.push(resource);
+      }
+    });
+    
+    console.log(`ToolRegistry: getResourcesByServerId returning ${resources.length} resources for server ${serverId}`);
+    return resources;
+  }
+
+  getResourceTemplatesByServerId(serverId: string): ResourceTemplate[] {
+    const templates: ResourceTemplate[] = [];
+    
+    this.resourceTemplates.forEach((template, key) => {
+      if (key.startsWith(`${serverId}:`)) {
+        templates.push(template);
+      }
+    });
+    
+    console.log(`ToolRegistry: getResourceTemplatesByServerId returning ${templates.length} templates for server ${serverId}`);
+    return templates;
   }
 
   getToolsByServerId(serverId: string): SharedToolInfo[] {
@@ -162,6 +246,20 @@ export class ToolRegistry {
     for (const [toolName, info] of this.tools.entries()) {
       if (info.serverId === serverId) {
         this.tools.delete(toolName);
+      }
+    }
+  }
+
+  removeResourcesByServerId(serverId: string): void {
+    for (const key of this.resources.keys()) {
+      if (key.startsWith(`${serverId}:`)) {
+        this.resources.delete(key);
+      }
+    }
+    
+    for (const key of this.resourceTemplates.keys()) {
+      if (key.startsWith(`${serverId}:`)) {
+        this.resourceTemplates.delete(key);
       }
     }
   }

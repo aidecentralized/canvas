@@ -10,9 +10,14 @@ type ToolExecutionHandler = (data: {
   }
 }) => void;
 
+type ResourcesListChangedHandler = (data: { serverId: string }) => void;
+type ResourceUpdatedHandler = (data: { serverId: string, uri: string }) => void;
+
 class SocketService {
   private socket: Socket | null = null;
   private toolExecutionHandlers: ToolExecutionHandler[] = [];
+  private resourcesListChangedHandlers: ResourcesListChangedHandler[] = [];
+  private resourceUpdatedHandlers: ResourceUpdatedHandler[] = [];
   private toolExecutionCache = new Map<string, {
     toolName: string;
     serverId: string;
@@ -68,6 +73,39 @@ class SocketService {
         handler(data);
       });
     });
+
+    // Set up resource-related event handlers
+    this.socket.on('resources_list_changed', (data: { serverId: string }) => {
+      console.log('Resources list changed event received:', data);
+      this.resourcesListChangedHandlers.forEach(handler => {
+        handler(data);
+      });
+    });
+
+    this.socket.on('resource_updated', (data: { serverId: string, uri: string }) => {
+      console.log('Resource updated event received:', data);
+      this.resourceUpdatedHandlers.forEach(handler => {
+        handler(data);
+      });
+    });
+  }
+
+  public addResourcesListChangedHandler(handler: ResourcesListChangedHandler) {
+    this.resourcesListChangedHandlers.push(handler);
+    console.log(`Added resources list changed handler, total: ${this.resourcesListChangedHandlers.length}`);
+  }
+
+  public removeResourcesListChangedHandler(handler: ResourcesListChangedHandler) {
+    this.resourcesListChangedHandlers = this.resourcesListChangedHandlers.filter(h => h !== handler);
+  }
+
+  public addResourceUpdatedHandler(handler: ResourceUpdatedHandler) {
+    this.resourceUpdatedHandlers.push(handler);
+    console.log(`Added resource updated handler, total: ${this.resourceUpdatedHandlers.length}`);
+  }
+
+  public removeResourceUpdatedHandler(handler: ResourceUpdatedHandler) {
+    this.resourceUpdatedHandlers = this.resourceUpdatedHandlers.filter(h => h !== handler);
   }
 
   public addToolExecutionHandler(handler: ToolExecutionHandler) {
@@ -92,4 +130,4 @@ class SocketService {
 }
 
 // Export as a singleton
-export const socketService = new SocketService(); 
+export const socketService = new SocketService();

@@ -3,12 +3,15 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 export interface ToolInfo {
-  name: string;
-  description?: string;
-  inputSchema: any;
+  serverId: string;
+  serverName: string;
+  client: Client;
+  tool: Tool;
   credentialRequirements?: CredentialRequirement[];
-  serverId?: string;  
-  rating?: number; 
+  inputSchema?: any;
+  description?: string;
+  name?: string;
+  rating?: number;
 }
 
 export interface CredentialRequirement {
@@ -28,17 +31,45 @@ export interface ToolCredentialInfo {
   credentials: CredentialRequirement[];
 }
 
-export interface ToolCall {
+// Resource interfaces based on MCP specification
+export interface Resource {
+  uri: string;
   name: string;
-  arguments: any;
+  description?: string;
+  mimeType?: string;
+}
+
+export interface ResourceTemplate {
+  uriTemplate: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+}
+
+export interface ResourceContent {
+  uri: string;
+  mimeType?: string;
+  text?: string;
+  blob?: string;
+}
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  input: any;
+  result?: {
+    content: any[];
+    isError?: boolean;
+  };
 }
 
 export interface ToolResult {
-  content: Array<{
-    type: string;
-    text?: string;
-    [key: string]: any;
-  }>;
+  content: any[];
+  isError?: boolean;
+  serverInfo?: {
+    id: string;
+    name: string;
+  };
 }
 
 export interface McpManager {
@@ -48,7 +79,7 @@ export interface McpManager {
     toolName: string,
     args: any
   ) => Promise<any>;
-  registerServer: (serverConfig: ServerConfig) => Promise<void>;
+  registerServer: (serverConfig: ServerConfig) => Promise<boolean>;
   getAvailableServers: () => ServerConfig[];
   getToolsWithCredentialRequirements: (sessionId: string) => ToolCredentialInfo[];
   setToolCredentials: (
@@ -57,6 +88,12 @@ export interface McpManager {
     serverId: string, 
     credentials: Record<string, string>
   ) => Promise<boolean>;
+  // Resource-related methods
+  listResources: (sessionId: string, serverId?: string) => Promise<Resource[]>;
+  listResourceTemplates: (sessionId: string, serverId?: string) => Promise<ResourceTemplate[]>;
+  readResource: (sessionId: string, uri: string) => Promise<ResourceContent[]>;
+  subscribeToResource: (sessionId: string, uri: string) => Promise<boolean>;
+  unsubscribeFromResource: (sessionId: string, uri: string) => Promise<boolean>;
   cleanup: () => Promise<void>;
   getSessionManager: () => any;
   fetchRegistryServers: () => Promise<ServerConfig[]>;
@@ -66,5 +103,9 @@ export interface ServerConfig {
   id: string;
   name: string;
   url: string;
+  description?: string;
+  types?: string[];
+  tags?: string[];
+  verified?: boolean;
   rating?: number;
 }

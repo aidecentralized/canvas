@@ -52,6 +52,7 @@ import {
 import { FaEye, FaEyeSlash, FaPlus, FaExternalLinkAlt, FaSync, FaTrash, FaSearch } from "react-icons/fa";
 import { useSettingsContext } from "../contexts/SettingsContext";
 import { debounce } from "lodash";
+import ResourceExplorer from "./ResourceExplorer";
 
 // Define the types locally instead of importing from a non-existent file
 interface CredentialRequirement {
@@ -785,6 +786,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 color="whiteAlpha.800"
                 _hover={{ color: "white" }}
               >
+                Resources
+              </Tab>
+              <Tab
+                _selected={{ 
+                  bg: "primary.500", 
+                  color: "white",
+                  fontWeight: "semibold",
+                  boxShadow: "0 4px 10px rgba(90, 26, 255, 0.3)",
+                }}
+                fontWeight="medium"
+                px={4}
+                py={2}
+                color="whiteAlpha.800"
+                _hover={{ color: "white" }}
+              >
                 About
               </Tab>
             </TabList>
@@ -1167,6 +1183,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                       ))}
                     </SimpleGrid>
                   )}
+                </VStack>
+              </TabPanel>
+
+              {/* Resources Tab */}
+              <TabPanel>
+                <VStack spacing={4} align="stretch">
+                  <Heading size="sm" mb={3} color="whiteAlpha.900">
+                    MCP Resources Explorer
+                  </Heading>
+                  <Text fontSize="sm" color="gray.400" mb={4}>
+                    Browse and interact with resources exposed by MCP servers. Resources can be files, data, or other content that servers make available.
+                  </Text>
+                  
+                  <ResourceExplorer />
                 </VStack>
               </TabPanel>
 
