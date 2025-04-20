@@ -25,8 +25,8 @@ MCP Host is a complete end-to-end implementation of a Model Context Protocol (MC
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/yourusername/mcp-host.git
-   cd mcp-host
+   git clone https://github.com/aidecentralized/canvas.git
+   cd canvas
    ```
 
 2. Start the application with Docker Compose:
@@ -173,3 +173,54 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [Model Context Protocol](https://modelcontextprotocol.io/) for the MCP standard
 - [Anthropic](https://www.anthropic.com/) for the Claude AI assistant
 - [Chakra UI](https://chakra-ui.com/) for the UI components
+
+## Deploying to Different Domains
+
+If you need to deploy the frontend and backend to different domains, follow these steps:
+
+### Backend Configuration
+
+1. Create a `.env` file in the server directory based on `.env.example`:
+
+```bash
+cp server/.env.example server/.env
+```
+
+2. Update the `ALLOWED_ORIGINS` variable with your frontend domain:
+
+```
+ALLOWED_ORIGINS=https://your-frontend-domain.com
+```
+
+3. Deploy the backend to your chosen hosting platform (AWS App Runner, etc.)
+
+### Frontend Configuration
+
+1. Create a `.env` file in the client directory based on `.env.example`:
+
+```bash
+cp client/.env.example client/.env
+```
+
+2. Update the `REACT_APP_API_BASE_URL` variable with your backend domain:
+
+```
+REACT_APP_API_BASE_URL=https://your-backend-domain.com
+```
+
+3. Build and deploy the frontend to your hosting platform (AWS Amplify, etc.):
+
+```bash
+cd client
+npm run build
+# Deploy the build folder to your hosting platform
+```
+
+### Security Considerations
+
+When deploying to different domains:
+
+1. Ensure CORS is properly configured on the backend
+2. For production, avoid using wildcard origins (`*`)
+3. Set appropriate CSP headers if needed
+4. Consider using HTTPS for all connections

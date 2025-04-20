@@ -1,0 +1,14 @@
+{
+  "ImageRepository": {
+    "ImageIdentifier": "390844754809.dkr.ecr.us-east-1.amazonaws.com/mcp-host-server:latest",
+    "ImageConfiguration": {
+      "Port": "4000",
+      "RuntimeEnvironmentVariables": {
+        "PORT": "4000",
+        "ALLOWED_ORIGINS": "https://main.d40kvw57gjida.amplifyapp.com,http://localhost:3000",
+        "CLIENT_URL": "https://main.d40kvw57gjida.amplifyapp.com"
+      }
+    },
+    "ImageRepositoryType": "ECR"
+  }
+} 

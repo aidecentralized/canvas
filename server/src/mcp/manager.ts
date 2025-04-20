@@ -33,30 +33,18 @@ import path from 'path';
 
 // Disable loading servers from file - rely on client registrations only
 const loadServers = (): ServerConfig[] => {
-  // Comment out file loading
-  // try {
-  //   const data = fs.readFileSync(SERVERS_FILE, 'utf8');
-  //   return JSON.parse(data);
-  // } catch (error) {
-  //   console.error('Error loading servers:', error);
-  //   return [];
-  // }
-  return []; // Return empty array - no pre-loaded servers
+  // No longer loading from server-side file storage
+  console.log('Server storage disabled - using client-side storage only');
+  return []; // Return empty array - servers will be registered by clients
 };
 
 // Disable saving servers to file
 const saveServers = (servers: ServerConfig[]) => {
-  // Comment out file saving
-  // try {
-  //   fs.writeFileSync(SERVERS_FILE, JSON.stringify(servers, null, 2));
-  // } catch (error) {
-  //   console.error('Error saving servers:', error);
-  // }
-  // No-op - we don't save servers anymore
+  // No longer saving to server-side file storage
+  // No-op - clients are responsible for persisting their servers
+  console.log('Server saving disabled - using client-side storage only');
 };
 
-// Local type declarations instead of importing from shared
-// Remove local type declarations since we're importing them now
 
 interface ToolCredentialInfo {
   toolName: string;
@@ -73,6 +61,7 @@ export interface McpManager {
     args: any
   ) => Promise<any>;
   registerServer: (serverConfig: ServerConfig) => Promise<boolean>;
+  removeServer: (serverId: string) => Promise<boolean>;
   getAvailableServers: () => ServerConfig[];
   getToolsWithCredentialRequirements: (sessionId: string) => ToolCredentialInfo[];
   setToolCredentials: (
@@ -104,11 +93,11 @@ interface RateLimitInfo {
 // Rate limiting configuration
 const RATE_LIMIT_CONFIG = {
   // Maximum requests per minute to a server
-  requestsPerMinute: 10,
+  requestsPerMinute: 30,
   // Minimum time between requests in ms (100ms = 0.1s)
-  minRequestSpacing: 500,
+  minRequestSpacing: 100,
   // Maximum queue length per server
-  maxQueueLength: 50,
+  maxQueueLength: 100,
 };
 
 export function setupMcpManager(io: SocketIoServer): McpManager {
@@ -177,7 +166,13 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
         }
       });
 
-      await client.connect(transport);
+      // Add a connection timeout to fail fast if server is unresponsive
+      const connectionPromise = client.connect(transport);
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("Connection timeout")), 30000); // 30 second timeout
+      });
+      
+      await Promise.race([connectionPromise, timeoutPromise]);
       console.log(`Successfully connected to server: ${serverConfig.id}`);
 
       // Fetch available tools from the server
@@ -187,6 +182,39 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
       // Ensure the server has tools
       if (!toolsResult?.tools || toolsResult.tools.length === 0) {
         throw new Error("No tools discovered on MCP server");
+      }
+      
+      // Validate tool schemas before registering
+      let invalidSchemas = [];
+      for (const tool of toolsResult.tools) {
+        // Check for incompatible schema structures
+        if (tool.inputSchema) {
+          if (tool.inputSchema.oneOf || tool.inputSchema.allOf || tool.inputSchema.anyOf) {
+            invalidSchemas.push(`${tool.name} (has oneOf/allOf/anyOf at root level)`);
+            console.warn(`⚠️ Tool ${tool.name} has incompatible schema with oneOf/allOf/anyOf at root level`);
+          }
+          
+          // Check for other common schema issues
+          if (!tool.inputSchema.type && !tool.inputSchema.properties) {
+            invalidSchemas.push(`${tool.name} (missing type or properties)`);
+            console.warn(`⚠️ Tool ${tool.name} has schema without type or properties`);
+          }
+        }
+      }
+      
+      // Log a warning if any schemas are incompatible, but still register the server
+      if (invalidSchemas.length > 0) {
+        console.warn(`⚠️ Server ${serverConfig.name} has ${invalidSchemas.length} tools with incompatible schemas: ${invalidSchemas.join(', ')}`);
+        
+        // Emit socket.io event to notify clients about problematic schemas
+        if (io) {
+          io.emit('server_warning', {
+            serverId: serverConfig.id,
+            serverName: serverConfig.name,
+            warning: `Server has ${invalidSchemas.length} tools with incompatible schemas that may not work with Claude API`,
+            details: invalidSchemas
+          });
+        }
       }
 
       // Register tools in our registry
@@ -219,6 +247,30 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
       const index = servers.findIndex((s) => s.id === serverConfig.id);
       if (index !== -1) {
         servers.splice(index, 1);
+      }
+      
+      // Clean up any client connection that might have been established
+      if (connectedClients.has(serverConfig.id)) {
+        try {
+          const client = connectedClients.get(serverConfig.id);
+          // The Client class doesn't have a disconnect method, so just remove from our map
+          console.log(`Removing client connection for failed server ${serverConfig.id}`);
+        } catch (disconnectErr) {
+          console.error(`Error handling failed server ${serverConfig.id}:`, disconnectErr);
+        }
+        connectedClients.delete(serverConfig.id);
+      }
+      
+      // Clean up any rate limit data
+      rateLimits.delete(serverConfig.id);
+      
+      // Emit socket.io event for server registration failure
+      if (io) {
+        io.emit('server_error', {
+          serverId: serverConfig.id,
+          serverName: serverConfig.name,
+          error: `Failed to register server: ${error.message || 'Unknown error'}`
+        });
       }
 
       // Failed registration
@@ -642,11 +694,59 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
   //   console.error("Error auto-registering servers:", error);
   // });
 
+  const removeServer = async (serverId: string): Promise<boolean> => {
+    console.log(`Removing server with ID: ${serverId}`);
+    
+    try {
+      // Remove from servers array
+      const index = servers.findIndex((s) => s.id === serverId);
+      if (index === -1) {
+        console.log(`Server ${serverId} not found`);
+        return false;
+      }
+      
+      const serverName = servers[index].name;
+      servers.splice(index, 1);
+      
+      // Remove tools associated with this server
+      toolRegistry.removeToolsByServerId(serverId);
+      
+      // Remove the client connection if it exists
+      if (connectedClients.has(serverId)) {
+        console.log(`Removing client connection for server ${serverId}`);
+        connectedClients.delete(serverId);
+      }
+      
+      // Remove rate limit info
+      if (rateLimits.has(serverId)) {
+        console.log(`Removing rate limit info for server ${serverId}`);
+        rateLimits.delete(serverId);
+      }
+      
+      console.log(`Successfully removed server ${serverName} (${serverId})`);
+      
+      // Emit an event via socket.io to notify clients
+      if (io) {
+        io.emit('server_removed', {
+          serverId,
+          serverName,
+          message: `Server ${serverName} has been removed`
+        });
+      }
+      
+      return true;
+    } catch (error) {
+      console.error(`Error removing server ${serverId}:`, error);
+      return false;
+    }
+  };
+
   // Return the MCP manager interface
   return {
     discoverTools,
     executeToolCall,
     registerServer,
+    removeServer,
     getAvailableServers,
     getToolsWithCredentialRequirements,
     setToolCredentials,

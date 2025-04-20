@@ -249,6 +249,13 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
         }
       );
 
+      // Handle server errors (500) more gracefully
+      if (response.status === 500) {
+        console.warn("Server returned 500 error for tools/credentials endpoint. Backend issue detected.");
+        // Return empty array instead of throwing
+        return [];
+      }
+
       if (!response.ok) {
         throw new Error(`Failed to get tools: ${response.status} ${response.statusText}`);
       }
@@ -331,6 +338,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
           method,
           headers: {
             "Content-Type": "application/json",
+            "X-Session-ID": sessionId || "",
           },
         }
       );
@@ -348,7 +356,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
       console.error("Error fetching servers from registry:", error);
       throw error;
     }
-  }, []);
+  }, [sessionId]);
 
   return (
     <SettingsContext.Provider

@@ -11,7 +11,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=4000
-      - CLIENT_URL=http://localhost:3000
+      - ALLOWED_ORIGINS=http://localhost:3000,https://main.d40kvw57gjida.amplifyapp.com
       - CREDENTIAL_ENCRYPTION_KEY=1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
     volumes:
       - ./server/logs:/app/logs

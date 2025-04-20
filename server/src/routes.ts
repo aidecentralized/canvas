@@ -66,20 +66,97 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
 
   async function getWeightedRatingScore(serverId: string): Promise<{ average: number, count: number, score: number }> {
     try {
-      const response = await axios.get(`https://nanda-registry.com/api/v1/servers/${serverId}/ratings`);
+       // Log the request attempt
+      console.log(`Fetching ratings for server ${serverId}`);
+      
+      const response = await axios.get(`https://nanda-registry.com/api/v1/servers/${serverId}/ratings`, {
+        timeout: 5000, // Add timeout to prevent hanging
+        validateStatus: status => status < 500 // Accept 404s without throwing
+      });
+      
+      // If response is 404 or other non-200, return defaults
+      if (response.status !== 200) {
+        console.log(`Server ${serverId} returned status ${response.status}, using default ratings`);
+        return { average: 0, count: 0, score: 0 };
+      }
+      
       const ratings = response.data?.data || [];
   
       const count = ratings.length;
       const total = ratings.reduce((sum: number, r: any) => sum + r.rating, 0);
       const average = count > 0 ? total / count : 0;
-      const score = average * count;
+      const score = average * Math.min(count, 100); // Cap the influence of review count
   
       return { average, count, score };
     } catch (error) {
-      console.error(`Failed to fetch ratings for server ${serverId}:`, error);
+      // Enhanced error logging
+      console.error(`Failed to fetch ratings for server ${serverId}:`, error.message || 'Unknown error');
+      
+      if (error.code) {
+        console.error(`Error code: ${error.code}, is network error: ${error.isAxiosError}`);
+      }
+      
+      // Return default values to prevent blocking the flow
       return { average: 0, count: 0, score: 0 };
     }
   }
+
+  // Helper function to fix schema compatibility issues with Claude API
+  const fixToolSchema = (schema: any): any => {
+    if (!schema) return schema;
+    
+    try {
+      // Create a deep copy to avoid modifying the original
+      const newSchema = JSON.parse(JSON.stringify(schema));
+      
+      // Fix oneOf/allOf/anyOf at top level (Claude doesn't support these)
+      if (newSchema.oneOf || newSchema.allOf || newSchema.anyOf) {
+        console.log("⚠️ Found oneOf/allOf/anyOf at root level, fixing for Claude compatibility");
+        
+        // Extract the schema array
+        const schemaArray = newSchema.oneOf || newSchema.allOf || newSchema.anyOf;
+        const schemaType = newSchema.oneOf ? 'oneOf' : (newSchema.allOf ? 'allOf' : 'anyOf');
+        
+        if (Array.isArray(schemaArray) && schemaArray.length > 0) {
+          console.log(`Schema has ${schemaType} with ${schemaArray.length} options, using first option`);
+          
+          // Take the first option and merge it with the parent
+          const firstOption = schemaArray[0];
+          
+          // Remove the oneOf/allOf/anyOf
+          delete newSchema.oneOf;
+          delete newSchema.allOf;
+          delete newSchema.anyOf;
+          
+          // Merge properties from first option
+          Object.assign(newSchema, firstOption);
+          
+          console.log(`Schema fixed: ${JSON.stringify(newSchema).substring(0, 100)}...`);
+        } else {
+          console.error(`Invalid schema array for ${schemaType}, cannot fix automatically`);
+        }
+      }
+      
+      // Also check for nested oneOf/allOf/anyOf in properties (Claude may also have issues with these)
+      if (newSchema.properties) {
+        for (const propName in newSchema.properties) {
+          const prop = newSchema.properties[propName];
+          if (prop.oneOf || prop.allOf || prop.anyOf) {
+            console.log(`⚠️ Found nested ${prop.oneOf ? 'oneOf' : (prop.allOf ? 'allOf' : 'anyOf')} in property ${propName}`);
+            // We could recursively fix these, but that's more complex and may not be necessary
+            // For now, just log the warning
+          }
+        }
+      }
+      
+      // Return the fixed schema
+      return newSchema;
+    } catch (error) {
+      console.error("Error fixing schema:", error);
+      // Return the original schema if there was an error
+      return schema;
+    }
+  };
 
   // Update the chat completion endpoint to ensure session
   app.post("/api/chat/completions", async (req: Request, res: Response) => {
@@ -119,8 +196,16 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
       if (tools) {
         try {
           const discoveredTools = await mcpManager.discoverTools(sessionId);
+          
+          // Debug logging to identify problematic schemas
+          console.log(`Discovered ${discoveredTools.length} tools for session ${sessionId}`);
+          discoveredTools.forEach((tool, index) => {
+            if (tool.inputSchema && (tool.inputSchema.oneOf || tool.inputSchema.allOf || tool.inputSchema.anyOf)) {
+              console.log(`⚠️ Tool #${index} (${tool.name}) has problematic schema with oneOf/allOf/anyOf at root level`);
+            }
+          });
 
-          availableTools = await Promise.all(discoveredTools.map(async (tool) => {
+          availableTools = await Promise.all(discoveredTools.map(async (tool, index) => {
             const { average, count, score } = await getWeightedRatingScore(tool.serverId);
             const ratingLabel = ratingTextMap[Math.round(average) || 0] || "unrated";
           
@@ -130,7 +215,7 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
             return {
               name: tool.name,
               description: enhancedDescription,
-              input_schema: tool.inputSchema,
+              input_schema: fixToolSchema(tool.inputSchema), // Apply schema fix for Claude compatibility
               score, // temporarily add score for sorting
             };
           }));
@@ -508,6 +593,134 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
     console.log("API: /api/servers GET called");
     const servers = mcpManager.getAvailableServers();
     res.json({ servers });
+  });
+
+  // Server health check endpoint
+  app.get("/api/servers/:serverId/health", async (req: Request, res: Response) => {
+    console.log(`API: /api/servers/${req.params.serverId}/health called`);
+    const { serverId } = req.params;
+    
+    if (!serverId) {
+      return res.status(400).json({ error: "Server ID is required" });
+    }
+    
+    try {
+      // Try to discover tools from this server - if this works, the server is healthy
+      const rawSessionId = (req.headers["x-session-id"] as string) || "";
+      const sessionId = ensureSession(rawSessionId);
+      
+      // Get all available servers
+      const servers = mcpManager.getAvailableServers();
+      const server = servers.find(s => s.id === serverId);
+      
+      if (!server) {
+        return res.status(404).json({ 
+          status: "unknown", 
+          error: "Server not found",
+          message: "The specified server ID is not registered"
+        });
+      }
+      
+      // Try to validate this server by discovering its tools
+      const startTime = Date.now();
+      const tools = await mcpManager.discoverTools(sessionId);
+      const endTime = Date.now();
+      const responseTime = endTime - startTime;
+      
+      // Filter tools to only show those from this server
+      const serverTools = tools.filter(tool => tool.serverId === serverId);
+      
+      if (serverTools.length === 0) {
+        return res.status(200).json({
+          status: "warning",
+          serverId,
+          serverName: server.name,
+          message: "Server is registered but no tools were discovered",
+          responseTime
+        });
+      }
+      
+      // Check for incompatible schemas
+      const incompatibleTools = serverTools.filter(tool => {
+        if (tool.inputSchema) {
+          return tool.inputSchema.oneOf || tool.inputSchema.allOf || tool.inputSchema.anyOf;
+        }
+        return false;
+      });
+      
+      if (incompatibleTools.length > 0) {
+        return res.status(200).json({
+          status: "warning",
+          serverId,
+          serverName: server.name,
+          message: `Server is responding but has ${incompatibleTools.length} tools with incompatible schemas`,
+          incompatibleTools: incompatibleTools.map(t => t.name),
+          toolCount: serverTools.length,
+          responseTime
+        });
+      }
+      
+      // All good!
+      return res.status(200).json({
+        status: "healthy",
+        serverId,
+        serverName: server.name,
+        toolCount: serverTools.length,
+        responseTime
+      });
+    } catch (error) {
+      console.error(`Error checking server health for ${serverId}:`, error);
+      return res.status(500).json({
+        status: "error",
+        serverId,
+        error: error.message || "Unknown error occurred while checking server health",
+        message: "Failed to communicate with server"
+      });
+    }
+  });
+
+  // Delete server endpoint
+  app.delete("/api/servers/:serverId", async (req: Request, res: Response) => {
+    console.log(`API: /api/servers/${req.params.serverId} DELETE called`);
+    const { serverId } = req.params;
+    
+    if (!serverId) {
+      return res.status(400).json({ error: "Server ID is required" });
+    }
+    
+    try {
+      // Get all available servers
+      const servers = mcpManager.getAvailableServers();
+      const serverExists = servers.some(s => s.id === serverId);
+      
+      if (!serverExists) {
+        return res.status(404).json({ 
+          error: "Server not found",
+          message: "The specified server ID is not registered"
+        });
+      }
+      
+      // Use the removeServer function to properly clean up the server
+      const success = await mcpManager.removeServer(serverId);
+      
+      if (success) {
+        return res.status(200).json({
+          success: true,
+          message: "Server deleted successfully"
+        });
+      } else {
+        return res.status(500).json({
+          error: "Failed to remove server",
+          message: "Server removal operation failed"
+        });
+      }
+    } catch (error) {
+      console.error(`Error deleting server ${serverId}:`, error);
+      return res.status(500).json({
+        error: error.message || "Unknown error occurred while deleting server",
+        message: "Failed to delete server"
+      });
+    }
   });
 
   // Registry refresh endpoint

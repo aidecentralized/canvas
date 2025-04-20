@@ -90,12 +90,29 @@ export class ToolRegistry {
         }
       }
       
+      // Fix incompatible schemas (oneOf/allOf/anyOf)
+      let fixedSchema = tool.inputSchema;
+      if (fixedSchema) {
+        try {
+          fixedSchema = this.fixIncompatibleSchema(tool.name, fixedSchema);
+        } catch (error) {
+          console.error(`ToolRegistry: Error fixing schema for tool ${tool.name}:`, error);
+          // Continue with the original schema, it will be fixed later in the routes.ts fixToolSchema function
+        }
+      }
+      
+      // Create a fixed tool object with the corrected schema
+      const fixedTool = {
+        ...tool,
+        inputSchema: fixedSchema
+      };
+      
       // Register the tool with credential requirements if any
       this.tools.set(tool.name, {
         serverId,
         serverName,
         client,
-        tool,
+        tool: fixedTool,
         credentialRequirements: credentialRequirements || [], 
         rating,
       });
@@ -163,6 +180,61 @@ export class ToolRegistry {
       if (info.serverId === serverId) {
         this.tools.delete(toolName);
       }
+    }
+  }
+
+  // Helper method to fix incompatible schemas
+  private fixIncompatibleSchema(toolName: string, schema: any): any {
+    if (!schema) return schema;
+    
+    try {
+      // Create a deep copy to avoid modifying the original
+      const newSchema = JSON.parse(JSON.stringify(schema));
+      
+      // Fix oneOf/allOf/anyOf at top level
+      if (newSchema.oneOf || newSchema.allOf || newSchema.anyOf) {
+        console.log(`ToolRegistry: Fixing incompatible schema for tool ${toolName}`);
+        
+        // Extract the schema array
+        const schemaArray = newSchema.oneOf || newSchema.allOf || newSchema.anyOf;
+        const schemaType = newSchema.oneOf ? 'oneOf' : (newSchema.allOf ? 'allOf' : 'anyOf');
+        
+        if (Array.isArray(schemaArray) && schemaArray.length > 0) {
+          console.log(`ToolRegistry: Schema has ${schemaType} with ${schemaArray.length} options, using first option`);
+          
+          // Take the first option and merge it with the parent
+          const firstOption = schemaArray[0];
+          
+          // Remove the oneOf/allOf/anyOf
+          delete newSchema.oneOf;
+          delete newSchema.allOf;
+          delete newSchema.anyOf;
+          
+          // Merge properties from first option
+          Object.assign(newSchema, firstOption);
+          
+          console.log(`ToolRegistry: Schema fixed successfully for tool ${toolName}`);
+        } else {
+          console.error(`ToolRegistry: Invalid schema array for ${schemaType} in tool ${toolName}`);
+        }
+      }
+      
+      // Also check for nested oneOf/allOf/anyOf in properties (Claude may also have issues with these)
+      if (newSchema.properties) {
+        for (const propName in newSchema.properties) {
+          const prop = newSchema.properties[propName];
+          if (prop && (prop.oneOf || prop.allOf || prop.anyOf)) {
+            console.log(`ToolRegistry: Found nested ${prop.oneOf ? 'oneOf' : (prop.allOf ? 'allOf' : 'anyOf')} in property ${propName} for tool ${toolName}`);
+            // We could recursively fix these too
+          }
+        }
+      }
+      
+      return newSchema;
+    } catch (error) {
+      console.error(`ToolRegistry: Error fixing schema:`, error);
+      // Return the original schema if there was an error
+      return schema;
     }
   }
 }

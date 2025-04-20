@@ -340,7 +340,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     removeNandaServer,
     refreshRegistry,
     getToolsWithCredentialRequirements,
-    setToolCredentials: saveToolCredentials,
+    setToolCredentials,
+    sessionId
   } = useSettingsContext();
   
   const toast = useToast();
@@ -499,26 +500,30 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }
 
     // Validate URL format
-  try {
-    new URL(newServer.url);
-  } catch (error) {
-    toast({
-      title: "Invalid URL",
-      description:
-        "Please enter a valid URL (e.g., http://localhost:3001/sse)",
-      status: "error",
-      duration: 3000,
-      isClosable: true,
-      position: "top",
-    });
-    return;
-  }
+    try {
+      new URL(newServer.url);
+    } catch (error) {
+      toast({
+        title: "Invalid URL",
+        description:
+          "Please enter a valid URL (e.g., http://localhost:3001/sse)",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
 
     // 🌐 Send request to backend to actually register the server
   try {
-    const res = await fetch("/api/servers", {
+    const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "";
+    const res = await fetch(`${API_BASE_URL}/api/servers`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "X-Session-ID": sessionId || ""
+      },
       body: JSON.stringify({
         id: newServer.id,
         name: newServer.name,
@@ -529,12 +534,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     const data = await res.json();
 
     if (res.ok && data.success) {
-      // Register new server 
-      registerNandaServer({
-        id: newServer.id,
-        name: newServer.name,
-        url: newServer.url,
-      });
+    // Register new server
+    registerNandaServer({
+      id: newServer.id,
+      name: newServer.name,
+      url: newServer.url,
+    });
 
       setNewServer({ id: "", name: "", url: "" });
 
@@ -583,7 +588,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     });
     
     // Optionally, refresh tools to update credentials UI
-    loadToolsWithCredentials();
+      loadToolsWithCredentials();
   };
 
   // Add a function to load registry servers
@@ -597,12 +602,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         
         // Only show green success notification for popular servers (not for search)
         if (!searchQuery) {
-          toast({
+    toast({
             title: "Registry servers loaded",
             description: result.message || `Found ${result.servers.length} servers in the registry`,
-            status: "success",
-            duration: 3000,
-            isClosable: true,
+      status: "success",
+      duration: 3000,
+      isClosable: true,
           });
         } else {
           // For search results, just update UI without success toast
@@ -1067,8 +1072,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                             <ToolCredentialForm
                                     key={`${tool.serverId}-${tool.toolName}`}
                               tool={tool}
-                                    onSave={saveToolCredentials}
-                                  />
+                              onSave={setToolCredentials}
+                            />
                                 ))}
                               </VStack>
                             </Box>
