@@ -64,43 +64,6 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
     }
   };
 
-  async function getWeightedRatingScore(serverId: string): Promise<{ average: number, count: number, score: number }> {
-    try {
-       // Log the request attempt
-      console.log(`Fetching ratings for server ${serverId}`);
-      
-      const response = await axios.get(`https://nanda-registry.com/api/v1/servers/${serverId}/ratings`, {
-        timeout: 5000, // Add timeout to prevent hanging
-        validateStatus: status => status < 500 // Accept 404s without throwing
-      });
-      
-      // If response is 404 or other non-200, return defaults
-      if (response.status !== 200) {
-        console.log(`Server ${serverId} returned status ${response.status}, using default ratings`);
-        return { average: 0, count: 0, score: 0 };
-      }
-      
-      const ratings = response.data?.data || [];
-  
-      const count = ratings.length;
-      const total = ratings.reduce((sum: number, r: any) => sum + r.rating, 0);
-      const average = count > 0 ? total / count : 0;
-      const score = average * Math.min(count, 100); // Cap the influence of review count
-  
-      return { average, count, score };
-    } catch (error) {
-      // Enhanced error logging
-      console.error(`Failed to fetch ratings for server ${serverId}:`, error.message || 'Unknown error');
-      
-      if (error.code) {
-        console.error(`Error code: ${error.code}, is network error: ${error.isAxiosError}`);
-      }
-      
-      // Return default values to prevent blocking the flow
-      return { average: 0, count: 0, score: 0 };
-    }
-  }
-
   // Helper function to fix schema compatibility issues with Claude API
   const fixToolSchema = (schema: any): any => {
     if (!schema) return schema;
@@ -182,15 +145,6 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
         apiKey,
       });
 
-      //Mapping ratings to natural langauge
-      const ratingTextMap = {
-        1: "terrible",
-        2: "poorly rated",
-        3: "average",
-        4: "good",
-        5: "excellent",
-      };
-
       // Fetch available tools if enabled
       let availableTools = [];
       if (tools) {
@@ -199,43 +153,13 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
           
           // Debug logging to identify problematic schemas
           console.log(`Discovered ${discoveredTools.length} tools for session ${sessionId}`);
-          discoveredTools.forEach((tool, index) => {
-            if (tool.inputSchema && (tool.inputSchema.oneOf || tool.inputSchema.allOf || tool.inputSchema.anyOf)) {
-              console.log(`⚠️ Tool #${index} (${tool.name}) has problematic schema with oneOf/allOf/anyOf at root level`);
-            }
-          });
 
-          availableTools = await Promise.all(discoveredTools.map(async (tool, index) => {
-            const { average, count, score } = await getWeightedRatingScore(tool.serverId);
-            const ratingLabel = ratingTextMap[Math.round(average) || 0] || "unrated";
-          
-            const enhancedDescription = `${tool.description || ""} 
-          (This tool runs on a ${ratingLabel} server with a ${average.toFixed(1)}/5 rating from ${count} reviewers — score: ${score.toFixed(1)}.)`;
-          
-            return {
-              name: tool.name,
-              description: enhancedDescription,
-              input_schema: fixToolSchema(tool.inputSchema), // Apply schema fix for Claude compatibility
-              score, // temporarily add score for sorting
-            };
+          // Directly map discovered tools to the format needed by Anthropic
+          availableTools = discoveredTools.map(tool => ({
+            name: tool.name,
+            description: tool.description || "", // Use original description
+            input_schema: fixToolSchema(tool.inputSchema), // Apply schema fix
           }));
-          
-          // Sort by score descending
-          availableTools.sort((a, b) => (b.score || 0) - (a.score || 0));
-          
-          // Remove score field before sending to Claude
-          availableTools = availableTools.map(({ score, ...tool }) => tool);
-
-          // Preparing Claude to prefer higher rated tools 
-          messages.unshift({
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "You are only being shown the highest-rated tools. Each includes the server's average rating, number of reviews, and a calculated reputation score. Prefer tools with higher scores — they are more trusted.",
-              },
-            ],
-          });
 
         } catch (error) {
           console.error("Error discovering tools:", error);
@@ -569,10 +493,9 @@ export function setupRoutes(app: Express, mcpManager: McpManager): void {
     }
 
     try {
-      const { average, count, score } = await getWeightedRatingScore(id);
-      console.log(`📊 Server rating summary for ${name}: avg=${average}, votes=${count}, score=${score}`);
-
-      const success = await mcpManager.registerServer({ id, name, url, rating:average});
+      // Convert rating to number if possible, or use the string value
+      const ratingValue = !isNaN(Number(rating)) ? Number(rating) : rating;
+      const success = await mcpManager.registerServer({ id, name, url, rating: ratingValue });
 
       if (success) {
         res.json({ success: true });

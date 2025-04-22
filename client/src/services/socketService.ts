@@ -26,7 +26,7 @@ class SocketService {
     
     this.socket = io(API_BASE_URL, {
       path: '/socket.io',
-      transports: ['polling', 'websocket'],
+      transports: ['websocket'],
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
       timeout: 20000

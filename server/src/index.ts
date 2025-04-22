@@ -96,8 +96,8 @@ const io = new SocketIoServer(server, {
   pingInterval: 10000,         // 10 seconds ping interval (very aggressive)
   connectTimeout: 90000,       // 1.5 minutes connect timeout (increased)
   path: '/socket.io',          // Explicitly set socket.io path
-  transports: ['websocket', 'polling'],  // Prefer websocket, fallback to polling
-  allowUpgrades: true,         // Allow transport upgrades
+  transports: ['websocket'],  // Force websocket only for EC2
+  allowUpgrades: false,         // No need to allow upgrades if only using websocket
   perMessageDeflate: true,     // Enable compression
   maxHttpBufferSize: 1e7,      // 10MB buffer for large payloads
   cookie: {

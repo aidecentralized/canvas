@@ -185,14 +185,16 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
             if (!response.ok) {
               const errorData = await response.json();
               console.error(`Failed to register server ${server.id}:`, errorData);
-              // Continue with other servers even if one fails
+              // Remove server from frontend state if backend registration fails
+              removeNandaServer(server.id);
             } else {
               const data = await response.json();
               console.log(`Server ${server.id} registered successfully:`, data);
             }
           } catch (error) {
             console.error(`Error registering server ${server.id}:`, error);
-            // Continue with other servers even if one fails
+            // Remove server from frontend state if fetch fails
+            removeNandaServer(server.id);
           }
         }
       };

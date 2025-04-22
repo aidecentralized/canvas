@@ -14,16 +14,6 @@ import path from 'path';
 // const STORAGE_DIR = process.env.MCP_STORAGE_DIR || path.join(process.cwd(), 'storage');
 // const SERVERS_FILE = path.join(STORAGE_DIR, 'servers.json');
 
-// // Ensure the storage directory exists
-// if (!fs.existsSync(STORAGE_DIR)) {
-//   fs.mkdirSync(STORAGE_DIR, { recursive: true });
-// }
-
-// // Create servers file if it doesn't exist - with empty array
-// if (!fs.existsSync(SERVERS_FILE)) {
-//   fs.writeFileSync(SERVERS_FILE, JSON.stringify([], null, 2));
-// }
-
 // // Ensure the file is only readable by the server process
 // try {
 //   fs.chmodSync(SERVERS_FILE, 0o600);
@@ -72,6 +62,8 @@ export interface McpManager {
   ) => Promise<boolean>;
   cleanup: () => Promise<void>;
   getSessionManager: () => SessionManager;
+  getServerHealth: (serverId: string) => ServerHealth | null;
+  resetServerCircuit: (serverId: string) => boolean;
 }
 
 // Remove local ServerConfig interface
@@ -100,6 +92,30 @@ const RATE_LIMIT_CONFIG = {
   maxQueueLength: 100,
 };
 
+// Circuit breaker states
+export type CircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+
+// Server health tracking for circuit breaker
+export interface ServerHealth {
+  serverId: string;
+  consecutiveFailures: number;
+  lastFailureTime: number;
+  state: CircuitState;
+  nextAttemptTime: number;
+}
+
+// Circuit breaker configuration
+const CIRCUIT_BREAKER_CONFIG = {
+  // Number of consecutive failures before opening circuit
+  failureThreshold: 3,
+  // Base delay for exponential backoff (milliseconds)
+  baseRetryDelay: 60000, // 1 minute
+  // Maximum delay between retry attempts (milliseconds)
+  maxRetryDelay: 1800000, // 30 minutes
+  // Factor for exponential backoff
+  backoffFactor: 2,
+};
+
 export function setupMcpManager(io: SocketIoServer): McpManager {
   console.log("--- McpManager setup initiated ---");
   
@@ -118,9 +134,128 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
   // Track rate limit information for each server
   const rateLimits = new Map<string, RateLimitInfo>();
 
+  // Track server health for circuit breaker
+  const serverHealthMap = new Map<string, ServerHealth>();
+
+  // Check server health before allowing connection attempts
+  const checkServerHealth = (serverId: string): boolean => {
+    const health = serverHealthMap.get(serverId);
+    
+    // If no health record exists, server is considered healthy
+    if (!health) {
+      return true;
+    }
+    
+    const now = Date.now();
+    
+    // If circuit is OPEN, check if we should try a test connection
+    if (health.state === 'OPEN') {
+      if (now >= health.nextAttemptTime) {
+        // Allow a test connection by setting to HALF_OPEN
+        console.log(`Circuit for server ${serverId} moved to HALF_OPEN state for test connection`);
+        serverHealthMap.set(serverId, {
+          ...health,
+          state: 'HALF_OPEN'
+        });
+        return true;
+      }
+      
+      const timeRemaining = Math.ceil((health.nextAttemptTime - now) / 1000);
+      console.log(`Circuit for server ${serverId} is OPEN. Next attempt in ${timeRemaining} seconds`);
+      return false;
+    }
+    
+    // Always allow connection attempts for CLOSED or HALF_OPEN circuits
+    return true;
+  };
+
+  // Record server failure and potentially open circuit
+  const recordServerFailure = (serverId: string): void => {
+    const health = serverHealthMap.get(serverId) || {
+      serverId,
+      consecutiveFailures: 0,
+      lastFailureTime: 0,
+      state: 'CLOSED' as CircuitState,
+      nextAttemptTime: 0
+    };
+    
+    const now = Date.now();
+    const updatedHealth = {
+      ...health,
+      consecutiveFailures: health.consecutiveFailures + 1,
+      lastFailureTime: now
+    };
+    
+    // Check if we should open the circuit
+    if (updatedHealth.consecutiveFailures >= CIRCUIT_BREAKER_CONFIG.failureThreshold && 
+        updatedHealth.state !== 'OPEN') {
+      // Calculate next attempt time with exponential backoff
+      const retryDelay = Math.min(
+        CIRCUIT_BREAKER_CONFIG.baseRetryDelay * Math.pow(
+          CIRCUIT_BREAKER_CONFIG.backoffFactor, 
+          updatedHealth.consecutiveFailures - CIRCUIT_BREAKER_CONFIG.failureThreshold
+        ),
+        CIRCUIT_BREAKER_CONFIG.maxRetryDelay
+      );
+      
+      updatedHealth.state = 'OPEN';
+      updatedHealth.nextAttemptTime = now + retryDelay;
+      
+      const delayInMinutes = Math.ceil(retryDelay / 60000);
+      console.log(`⚠️ Circuit OPENED for server ${serverId} after ${updatedHealth.consecutiveFailures} consecutive failures. Will retry in ~${delayInMinutes} minute(s)`);
+      
+      // Emit socket.io event for circuit open
+      if (io) {
+        io.emit('server_circuit_open', {
+          serverId,
+          message: `Server connection circuit opened after ${updatedHealth.consecutiveFailures} failures`,
+          retryAfter: delayInMinutes
+        });
+      }
+    }
+    
+    serverHealthMap.set(serverId, updatedHealth);
+  };
+
+  // Record server success and close circuit if needed
+  const recordServerSuccess = (serverId: string): void => {
+    const health = serverHealthMap.get(serverId);
+    
+    // If no health record or already CLOSED, nothing to do
+    if (!health || health.state === 'CLOSED') {
+      return;
+    }
+    
+    // Reset health on success
+    const updatedHealth = {
+      serverId,
+      consecutiveFailures: 0,
+      lastFailureTime: 0,
+      state: 'CLOSED' as CircuitState,
+      nextAttemptTime: 0
+    };
+    
+    console.log(`✅ Circuit CLOSED for server ${serverId} after successful connection`);
+    serverHealthMap.set(serverId, updatedHealth);
+    
+    // Emit socket.io event for circuit close
+    if (io) {
+      io.emit('server_circuit_close', {
+        serverId,
+        message: `Server connection circuit closed after successful connection`
+      });
+    }
+  };
+
   const registerServer = async (serverConfig: ServerConfig): Promise<boolean> => {
     try {
       console.log(`Registering server: ${JSON.stringify(serverConfig)}`);
+      
+      // Check circuit breaker before attempting connection
+      if (!checkServerHealth(serverConfig.id)) {
+        console.log(`Skipping connection attempt to server ${serverConfig.id} due to open circuit`);
+        return false;
+      }
       
       // Initialize rate limit tracking for this server if it doesn't exist
       if (!rateLimits.has(serverConfig.id)) {
@@ -156,7 +291,7 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
         name: "mcp-host",
         version: "1.0.0",
         // Set the timeout at the client level
-        defaultTimeout: 300000, // 5 minutes timeout (increased from 3 minutes)
+        defaultTimeout: 30000, // Reduced to 30 seconds
         // Add retry configuration
         retryConfig: {
           maxRetries: 5, // Increased from 3
@@ -229,6 +364,9 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
       // Store the connected client for later use
       connectedClients.set(serverConfig.id, client);
 
+      // Record successful connection in circuit breaker
+      recordServerSuccess(serverConfig.id);
+
       console.log(
         `Registered server ${serverConfig.name} with ${
           toolsResult?.tools?.length
@@ -242,6 +380,9 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
         `Failed to register server ${serverConfig.name}:`,
         error
       );
+
+      // Record failure in circuit breaker
+      recordServerFailure(serverConfig.id);
 
       // Clean up in-memory state
       const index = servers.findIndex((s) => s.id === serverConfig.id);
@@ -280,74 +421,20 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
 
   // Discover all available tools for a session
   const discoverTools = async (sessionId: string): Promise<ToolInfo[]> => {
-    // Get all tools from the registry
-    const tools = toolRegistry.getAllTools();
+    console.log(`Discovering tools for session: ${sessionId}`);
     
-    // For each tool, check if we have stored credentials and modify schemas accordingly
-    const modifiedTools = tools.map(toolInfo => {
-      const { serverId, name } = toolInfo;
-      
-      // Only process tools with credential requirements
-      if (toolInfo.credentialRequirements && toolInfo.credentialRequirements.length > 0) {
-        // Check if we have stored credentials for this tool
-        const credentials = sessionManager.getToolCredentials(sessionId, name, serverId);
-        
-        if (credentials) {
-          console.log(`🔑 Modifying schema for tool ${name} to mark credentials as optional since they are stored`);
-          
-          // Create a copy of the tool info to modify
-          const modifiedTool = { ...toolInfo };
-          
-          // If the tool has inputSchema, create a modified version
-          if (modifiedTool.inputSchema) {
-            // Create a deep copy of the input schema
-            const modifiedSchema = JSON.parse(JSON.stringify(modifiedTool.inputSchema));
-            
-            // If the schema has a __credentials property, mark it as not required
-            if (modifiedSchema.properties && modifiedSchema.properties.__credentials &&
-                modifiedSchema.required && modifiedSchema.required.includes('__credentials')) {
-              modifiedSchema.required = modifiedSchema.required.filter(req => req !== '__credentials');
-            }
-            
-            // For common credential parameters like api_key, make them optional too
-            if (modifiedSchema.required) {
-              toolInfo.credentialRequirements.forEach(cred => {
-                const credId = cred.id;
-                if (modifiedSchema.required.includes(credId)) {
-                  modifiedSchema.required = modifiedSchema.required.filter(req => req !== credId);
-                }
-              });
-            }
-            
-            // Update the description to indicate credentials are auto-injected
-            if (credentials) {
-              modifiedSchema.description = (modifiedSchema.description || '') + 
-                ' (Credentials are automatically applied from your saved settings)';
-              
-              // For each credential parameter, add a hint in the description
-              toolInfo.credentialRequirements.forEach(cred => {
-                const credId = cred.id;
-                if (modifiedSchema.properties[credId]) {
-                  modifiedSchema.properties[credId].description = 
-                    '✓ Using saved credential from your settings (you don\'t need to provide this)';
-                }
-              });
-            }
-            
-            // Update the modified schema
-            modifiedTool.inputSchema = modifiedSchema;
-          }
-          
-          return modifiedTool;
-        }
+    const toolInfos = toolRegistry.getAllTools().filter(tool => {
+      // Check if this server has an open circuit
+      const health = serverHealthMap.get(tool.serverId);
+      if (health && health.state === 'OPEN') {
+        console.log(`Skipping tool ${tool.name} from server ${tool.serverId} due to open circuit`);
+        return false;
       }
-      
-      // Return the original tool info if no changes needed
-      return toolInfo;
+      return true;
     });
     
-    console.log(`Discovered tools for session ${sessionId}: ${JSON.stringify(modifiedTools.map(t => t.name))}`);
-    return modifiedTools;
+    // Sort by rating if available, otherwise keep original order
+    return toolInfos;
   };
 
   // Execute a tool call with rate limiting
@@ -356,54 +443,38 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
     toolName: string,
     args: any
   ): Promise<any> => {
+    console.log(`Executing tool call ${toolName} with args: ${JSON.stringify(args)}`);
+    
     const toolInfo = toolRegistry.getToolInfo(toolName);
     if (!toolInfo) {
       throw new Error(`Tool ${toolName} not found`);
     }
-
-    const { serverId } = toolInfo;
-
-    // Create rate limit info for this server if it doesn't exist
-    if (!rateLimits.has(serverId)) {
-      rateLimits.set(serverId, {
-        lastRequestTime: 0,
-        requestCount: 0,
-        isProcessing: false,
-        queue: [],
-      });
-    }
-
-    const rateLimit = rateLimits.get(serverId);
-
-    // Check if we've exceeded the queue limit
-    if (rateLimit.queue.length >= RATE_LIMIT_CONFIG.maxQueueLength) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `I'm sorry, but there are too many pending requests to this server. Please try again later.`
-          }
-        ],
-        serverInfo: {
-          id: serverId,
-          name: toolInfo.serverName || serverId,
-          tool: toolName
-        }
-      };
+    
+    // Check circuit breaker before attempting tool execution
+    if (!checkServerHealth(toolInfo.serverId)) {
+      throw new Error(`Tool ${toolName} is unavailable due to server connection issues. Please try again later.`);
     }
     
-    // Add this request to the queue
+    // Use rate limiting
+    const rateLimit = rateLimits.get(toolInfo.serverId);
+    if (!rateLimit) {
+      throw new Error(`Rate limit info for server ${toolInfo.serverId} not found`);
+    }
+    
     return new Promise((resolve, reject) => {
+      // Add to queue
       rateLimit.queue.push({
-        resolve,
-        reject,
         toolName,
-        sessionId,
         args,
+        sessionId,
+        resolve,
+        reject
       });
       
-      // Start processing the queue if it's not already being processed
-      processQueue(serverId);
+      // Start processing queue if not already processing
+      if (!rateLimit.isProcessing) {
+        processQueue(toolInfo.serverId);
+      }
     });
   };
 
@@ -454,48 +525,26 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
       while (retries <= maxRetries) {
         try {
           // Check if the tool requires credentials
-          const requiresCredentials = toolInfo.credentialRequirements && 
-                                     toolInfo.credentialRequirements.length > 0;
-          
-          // Prepare args with credentials if needed
-          let callArgs = {...nextRequest.args};
-          
-          if (requiresCredentials) {
-            // Get credentials from session manager
+          if (toolInfo.credentialRequirements && toolInfo.credentialRequirements.length > 0) {
+            console.log(`🔐 Tool ${nextRequest.toolName} requires credentials`);
+
+            // Get credentials from session storage
             const credentials = sessionManager.getToolCredentials(
               nextRequest.sessionId,
               nextRequest.toolName,
               toolServerId
             );
-            
+
+            const callArgs = nextRequest.args;
+
+            // Check if we have credentials
             if (credentials) {
-              console.log(`🔑 Using stored credentials for tool ${nextRequest.toolName}`);
-              
-              // Apply credentials to the args
-              // Check credential requirement IDs to determine how to inject credentials
-              toolInfo.credentialRequirements?.forEach(cred => {
-                const credId = cred.id;
-                if (credentials[credId]) {
-                  // Add the credential directly to args
-                  console.log(`Adding credential: ${credId}`);
-                  callArgs[credId] = credentials[credId];
-                }
-              });
-              
-              // If the tool expects a __credentials object, create it
-              const needsCredentialsObject = tool?.inputSchema?.properties?.__credentials;
-              if (needsCredentialsObject && !callArgs.__credentials) {
-                callArgs.__credentials = {};
-                toolInfo.credentialRequirements?.forEach(cred => {
-                  if (credentials[cred.id]) {
-                    callArgs.__credentials[cred.id] = credentials[cred.id];
-                  }
-                });
+              // Merge credential parameters with call arguments
+              console.log(`✅ Credentials found for tool ${nextRequest.toolName}`);
+              for (const [credKey, credValue] of Object.entries(credentials)) {
+                console.log(`🔑 Adding credential parameter: ${credKey}`);
+                callArgs[credKey] = credValue;
               }
-              
-              // Add a flag to tell the AI that credentials are being automatically used
-              // This helps the LLM understand that credentials are already handled
-              callArgs.__injectedCredentials = true;
             } else {
               console.log(`⚠️ Tool ${nextRequest.toolName} requires credentials, but none were found in session ${nextRequest.sessionId}`);
               
@@ -536,51 +585,60 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
           
           // Execute the tool via MCP with the prepared arguments
           console.log(`🔧 Executing tool ${nextRequest.toolName} (attempt ${retries + 1}/${maxRetries + 1})`);
-          const result = await client.callTool({
-            name: nextRequest.toolName,
-            arguments: callArgs,
-            // The timeout is set at client level already
-          });
-
-          // Add server info to the result for debugging
-          const enhancedResult = {
-            ...result,
-            content: Array.isArray(result.content) 
-              ? result.content
-              : [{ 
-                  type: "text", 
-                  text: `Tool result for ${nextRequest.toolName}`,
-                }],
-            serverInfo: {
-              id: serverId,
-              name: toolInfo.serverName || serverId,
-              tool: nextRequest.toolName
-            }
-          };
-
-          // For ALL tool responses, add instructions for Claude to display the result verbatim
-          // This is universal and doesn't depend on tool naming conventions
-          if (enhancedResult.content && enhancedResult.content.length > 0) {
-            // Get the original result text
-            const originalResultText = enhancedResult.content[0].text;
-            
-            // Create a new enhanced content with clear instructions for Claude
-            enhancedResult.content = [
-              {
-                type: "text",
-                text: `TOOL RESULT:\n\n${originalResultText}\n\nNOTE TO CLAUDE: Display the above result exactly as shown without analysis or commentary. If this is an optimization or transformation, focus on showing the exact output.`
-              }
-            ];
-          }
-
-          console.log(`✅ Tool ${nextRequest.toolName} executed successfully after ${retries} retries`);
           
-          // Resolve the promise with the result
-          nextRequest.resolve(enhancedResult);
+          const callResult = await client.callTool({
+            name: tool.name,
+            arguments: nextRequest.args
+          });
+          
+          // Successfully called the tool
+          console.log(`✅ Tool ${nextRequest.toolName} executed successfully`);
+          
+          // Record success in health check
+          recordServerSuccess(toolServerId);
+          
+          // Process the tool result
+          if (callResult.result && typeof callResult.result === 'object') {
+            // Add server info to the response
+            const responseWithServerInfo = {
+              ...callResult.result,
+              serverInfo: {
+                id: serverId,
+                name: toolInfo.serverName || serverId,
+                tool: nextRequest.toolName
+              }
+            };
+            
+            nextRequest.resolve(responseWithServerInfo);
+          } else {
+            // Handle unexpected result format
+            console.warn(`⚠️ Tool ${nextRequest.toolName} returned unexpected result format:`, callResult);
+            
+            nextRequest.resolve({
+              content: [
+                {
+                  type: "text",
+                  text: `Tool ${nextRequest.toolName} was executed but returned an unexpected format.\n\nRaw result: ${JSON.stringify(callResult)}`,
+                }
+              ],
+              serverInfo: {
+                id: serverId,
+                name: toolInfo.serverName || serverId,
+                tool: nextRequest.toolName
+              }
+            });
+          }
+          
+          // Exit the retry loop on success
           break;
         } catch (error) {
           lastError = error;
           console.error(`Error executing tool ${nextRequest.toolName} (attempt ${retries + 1}/${maxRetries + 1}):`, error);
+          
+          // Record failure in health check for timeouts
+          if (error.code === -32001) {
+            recordServerFailure(toolServerId);
+          }
           
           // If it's a timeout error, try again
           if (error.code === -32001) { // This is the timeout error code
@@ -681,6 +739,21 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
     connectedClients.clear();
   };
 
+  // Get circuit breaker status for a server
+  const getServerHealth = (serverId: string): ServerHealth | null => {
+    return serverHealthMap.get(serverId) || null;
+  };
+
+  // Reset circuit breaker for a server 
+  const resetServerCircuit = (serverId: string): boolean => {
+    const exists = serverHealthMap.has(serverId);
+    if (exists) {
+      recordServerSuccess(serverId);
+      return true;
+    }
+    return false;
+  };
+
   // Disable auto-registration process - rely on client registrations instead
   // const autoRegisterServers = async () => {
   //   console.log(`Auto-registering ${servers.length} servers from storage...`);
@@ -723,6 +796,12 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
         rateLimits.delete(serverId);
       }
       
+      // Remove health tracking info
+      if (serverHealthMap.has(serverId)) {
+        console.log(`Removing health tracking for server ${serverId}`);
+        serverHealthMap.delete(serverId);
+      }
+      
       console.log(`Successfully removed server ${serverName} (${serverId})`);
       
       // Emit an event via socket.io to notify clients
@@ -752,5 +831,7 @@ export function setupMcpManager(io: SocketIoServer): McpManager {
     setToolCredentials,
     cleanup,
     getSessionManager: () => sessionManager,
+    getServerHealth,
+    resetServerCircuit,
   };
 }
